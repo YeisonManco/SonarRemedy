@@ -747,5 +747,31 @@ class InitCommandTests(unittest.TestCase):
             self.assertIn("sonar_remedy_", instr_content)
 
 
+class ScanSuppressionsCommandTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.config_path = os.path.join(os.path.realpath(self.tmp.name), "config.json")
+        rc.save(_valid_config(), self.config_path)
+
+    def _run(self, argv):
+        with contextlib.redirect_stdout(io.StringIO()):
+            return sonar_remedy.main(argv)
+
+    def test_scan_suppressions_maps_repo(self):
+        import sonar_suppressions
+
+        with mock.patch.object(
+            sonar_suppressions,
+            "scan",
+            return_value={"status": "scanned", "findings": [], "counts": {"total": 0}},
+        ) as spatched:
+            code = self._run(
+                ["--config", self.config_path, "scan-suppressions", "--repo", self.tmp.name]
+            )
+        self.assertEqual(code, 0)
+        self.assertEqual(spatched.call_args.args[0], self.tmp.name)
+
+
 if __name__ == "__main__":
     unittest.main()

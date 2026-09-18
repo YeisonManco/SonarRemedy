@@ -21,6 +21,7 @@ COMMANDS = [
     "analyze",
     "run-all",
     "configure-project",
+    "scan-suppressions",
 ]
 
 
@@ -71,6 +72,12 @@ class ToolRegistryTests(unittest.TestCase):
         self.assertIn("--sonar-url", argv)
         self.assertIn("--allow-http", argv)
         self.assertIn("--name", argv)
+
+    def test_build_argv_scan_suppressions(self):
+        self.assertEqual(
+            mcp.build_argv("sonar_remedy_scan_suppressions", {"repo": "C:/r"}),
+            ["scan-suppressions", "--repo", "C:/r"],
+        )
 
     def test_call_tool_returns_output(self):
         def fake_main(argv):

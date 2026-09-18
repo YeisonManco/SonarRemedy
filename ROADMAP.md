@@ -25,6 +25,7 @@
 ### Nice-to-have (done)
 
 - [x] **Type hints + formatting** — every production function annotated; ruff linter + formatter clean.
+- [x] **Suppression scan** — mechanical detector of Sonar-evasion directives (`certain`/`ambiguous`), wired as `scan-suppressions` + MCP tool.
 
 ## Current state
 

@@ -2,6 +2,12 @@
 
 All notable changes to SonarRemedy are documented here.
 
+## [0.2.0] - 2026-09-18
+
+### Added
+
+- **Suppression scan** (`scan-suppressions` + `sonar_remedy_scan_suppressions`) — detects code-level directives that may evade Sonar (`NOSONAR`, `#pragma warning disable`, `@SuppressWarnings`, `eslint-disable`, `@ts-ignore`, `# noqa`, `# type: ignore`, …), each tiered `certain` vs `ambiguous`. Mechanical detection runs first; only `ambiguous` findings need AI judgment, so no tokens are wasted on clear cases.
+
 ## [0.1.2] - 2026-09-18
 
 ### Added

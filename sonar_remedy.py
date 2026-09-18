@@ -264,6 +264,10 @@ def main(argv: list[str] | None = None) -> int:
         "init", help="write .vscode/mcp.json + the Copilot instruction into a project"
     )
     init_cmd.add_argument("--dir", help="target project directory (default: current)")
+    supp_cmd = commands.add_parser(
+        "scan-suppressions", help="detect code-level suppressions that may evade Sonar"
+    )
+    supp_cmd.add_argument("--repo", help="local checkout (overrides repository.local_path)")
     args = parser.parse_args(argv)
     try:
         if args.command == "projects":
@@ -372,6 +376,15 @@ def main(argv: list[str] | None = None) -> int:
             )
             return 0
         rcfg = _load_config(args)
+        if args.command == "scan-suppressions":
+            import sonar_suppressions
+
+            repo = args.repo or (rcfg.get("repository") or {}).get("local_path")
+            if not repo:
+                raise rc.ConfigError("--repo is required, or set repository.local_path in config")
+            result = sonar_suppressions.scan(repo)
+            print(json.dumps(result, indent=2, sort_keys=True))
+            return 0
         if args.command == "fetch":
             repo = args.repo or (rcfg.get("repository") or {}).get("local_path")
             if not repo:

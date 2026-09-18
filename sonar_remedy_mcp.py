@@ -168,6 +168,16 @@ TOOLS = [
             ],
         },
     },
+    {
+        "name": "sonar_remedy_scan_suppressions",
+        "description": "Detect code-level suppressions that may evade Sonar (NOSONAR, pragma, noqa, ...), tiered certain vs ambiguous.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "repo": {"type": "string"},
+            },
+        },
+    },
 ]
 
 
@@ -264,6 +274,8 @@ def build_argv(name: str, arguments: dict[str, Any] | None) -> list[str]:
             + _opt("--provider", a.get("provider"))
             + (["--allow-http"] if a.get("allow_http") else [])
         )
+    if name == "sonar_remedy_scan_suppressions":
+        return g + ["scan-suppressions"] + _opt("--repo", a.get("repo"))
     raise ValueError(f"unknown tool: {name}")
 
 
