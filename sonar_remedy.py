@@ -289,7 +289,7 @@ def _configure_projects_interactive() -> int:
 
 
 def _update(path: str | None) -> int:
-    """git pull + pip install the pack from its clone."""
+    """git pull, then reinstall in a detached process (so pip can replace the .exe)."""
     target = os.path.abspath(path) if path else os.getcwd()
     if not os.path.isdir(os.path.join(target, ".git")):
         print(
@@ -307,11 +307,34 @@ def _update(path: str | None) -> int:
         return 2
     try:
         subprocess.run(["git", "-C", target, "pull"], check=True)
-        subprocess.run([sys.executable, "-m", "pip", "install", target], check=True)
     except subprocess.CalledProcessError as error:
         print(json.dumps({"status": "blocked", "error": str(error)}, sort_keys=True))
         return 2
-    print(json.dumps({"status": "updated", "path": target}, sort_keys=True))
+    # Reinstall in a DETACHED process that waits for THIS process to exit, so pip
+    # can replace the locked console-script .exe on Windows.
+    flags = 0
+    if os.name == "nt":
+        flags = getattr(subprocess, "DETACHED_PROCESS", 0) | getattr(
+            subprocess, "CREATE_NEW_PROCESS_GROUP", 0
+        )
+    reinstall = (
+        "import subprocess, sys, time; "
+        f"time.sleep(2); "
+        f"subprocess.run([sys.executable, '-m', 'pip', 'install', {target!r}])"
+    )
+    subprocess.Popen(
+        [sys.executable, "-c", reinstall],
+        creationflags=flags,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        close_fds=True,
+    )
+    print(
+        json.dumps(
+            {"status": "updated", "path": target, "note": "reinstall running in the background"},
+            sort_keys=True,
+        )
+    )
     return 0
 
 
