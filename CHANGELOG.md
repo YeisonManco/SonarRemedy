@@ -2,6 +2,12 @@
 
 All notable changes to SonarRemedy are documented here.
 
+## [0.2.3] - 2026-09-18
+
+### Added
+
+- **Custom token/PAT env var names** — `configure-project` now accepts `--token-env` and `--pat-env`, so each project can use its own env var (multiple Sonar servers/accounts coexist). The config stores the NAME, never the value.
+
 ## [0.2.2] - 2026-09-18
 
 ### Added

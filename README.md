@@ -134,6 +134,12 @@ sonarremedy configure-project --name <name> --sonar-url <url> --project-key <key
   --repo-url <git-url> --local-path <path> --worktree-root <path>
 ```
 
+The config stores the **name** of the token env var, never the value. Each project can use its own var, so multiple Sonar servers/accounts coexist:
+
+```powershell
+sonarremedy configure-project ... --token-env SONAR_TOKEN_PROJECT_B --pat-env GIT_PAT_PROJECT_B
+```
+
 ## Set up an editor (MCP)
 
 One command wires up VS Code + Copilot Chat:

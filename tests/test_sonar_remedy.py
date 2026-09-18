@@ -758,6 +758,35 @@ class ConfigureProjectCommandTests(unittest.TestCase):
         cfg = spatched.call_args.args[1]
         self.assertEqual(cfg["repository"]["main_branch"], "feature/Sonar")
 
+    def test_configure_project_custom_env_names(self):
+        with mock.patch.object(rc, "save_project") as spatched:
+            with contextlib.redirect_stdout(io.StringIO()):
+                code = sonar_remedy.main(
+                    [
+                        "configure-project",
+                        "--name",
+                        "mem",
+                        "--sonar-url",
+                        "https://h",
+                        "--project-key",
+                        "PK",
+                        "--repo-url",
+                        "https://github.com/o/r",
+                        "--local-path",
+                        "C:/r",
+                        "--worktree-root",
+                        "C:/wt",
+                        "--token-env",
+                        "SONAR_TOKEN_PROJECT_B",
+                        "--pat-env",
+                        "GIT_PAT_PROJECT_B",
+                    ]
+                )
+        self.assertEqual(code, 0)
+        cfg = spatched.call_args.args[1]
+        self.assertEqual(cfg["sonar"]["token_env"], "SONAR_TOKEN_PROJECT_B")
+        self.assertEqual(cfg["repository"]["pat_env"], "GIT_PAT_PROJECT_B")
+
 
 class InitCommandTests(unittest.TestCase):
     def test_init_writes_mcp_and_instructions(self):

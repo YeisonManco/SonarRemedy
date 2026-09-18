@@ -311,6 +311,10 @@ def main(argv: list[str] | None = None) -> int:
     cfgproj_cmd.add_argument("--main-branch", default=None)
     cfgproj_cmd.add_argument("--provider", default="manual")
     cfgproj_cmd.add_argument("--allow-http", action="store_true")
+    cfgproj_cmd.add_argument(
+        "--token-env", default="SONAR_TOKEN", help="env var name for the Sonar token"
+    )
+    cfgproj_cmd.add_argument("--pat-env", default="GIT_PAT", help="env var name for the Git PAT")
     init_cmd = commands.add_parser(
         "init", help="write .vscode/mcp.json + the Copilot instruction into a project"
     )
@@ -394,11 +398,11 @@ def main(argv: list[str] | None = None) -> int:
                 "sonar": {
                     "url": args.sonar_url,
                     "project_key": args.project_key,
-                    "token_env": "SONAR_TOKEN",
+                    "token_env": args.token_env,
                 },
                 "repository": {
                     "url": args.repo_url,
-                    "pat_env": "GIT_PAT",
+                    "pat_env": args.pat_env,
                     "local_path": args.local_path,
                     "main_branch": branch,
                     "propagation_branches": [],

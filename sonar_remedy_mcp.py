@@ -144,7 +144,7 @@ TOOLS = [
     },
     {
         "name": "sonar_remedy_configure_project",
-        "description": "Save a project's Sonar/repo config non-interactively. The token is NOT stored here — the user sets SONAR_TOKEN separately (masked).",
+        "description": "Save a project's Sonar/repo config non-interactively. The token is NOT stored here — the user sets the env var (SONAR_TOKEN by default, or a custom name via token_env) separately (masked).",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -157,6 +157,8 @@ TOOLS = [
                 "main_branch": {"type": "string"},
                 "provider": {"type": "string"},
                 "allow_http": {"type": "boolean"},
+                "token_env": {"type": "string"},
+                "pat_env": {"type": "string"},
             },
             "required": [
                 "name",
@@ -281,6 +283,8 @@ def build_argv(name: str, arguments: dict[str, Any] | None) -> list[str]:
             ]
             + _opt("--main-branch", a.get("main_branch"))
             + _opt("--provider", a.get("provider"))
+            + _opt("--token-env", a.get("token_env"))
+            + _opt("--pat-env", a.get("pat_env"))
             + (["--allow-http"] if a.get("allow_http") else [])
         )
     if name == "sonar_remedy_scan_suppressions":
