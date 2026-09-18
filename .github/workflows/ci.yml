@@ -14,3 +14,12 @@ jobs:
           python-version: '3.11'
       - name: Run tests
         run: python -B -m unittest discover -s tests -v
+      - name: Install package
+        run: python -m pip install .
+      - name: Smoke-test entry points
+        shell: pwsh
+        run: |
+          sonarremedy --help
+          sonar-remedy-config --help
+          $r = '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}' | sonar-remedy-mcp
+          if (-not $r -or $r -notmatch '"result"') { Write-Error "MCP initialize failed"; exit 1 }

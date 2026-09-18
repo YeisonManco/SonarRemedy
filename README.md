@@ -2,6 +2,38 @@
 
 Recover SonarQube technical debt automatically — a **proposal-only worker swarm with a serial integrator**, driven by any AI (VS Code Copilot, OpenCode, Claude Code) over MCP.
 
+## Install
+
+Python 3.11+ (stdlib only — no pip dependencies). Windows is the primary target.
+
+**A. Install as a CLI (recommended):**
+
+```powershell
+git clone https://github.com/YeisonManco/SonarRemedy
+cd SonarRemedy
+python -m pip install .
+```
+
+This installs three commands:
+
+| Command | What it runs |
+|---|---|
+| `sonarremedy` | the facade CLI (`fetch`, `slice`, `run`, `status`, `init`, …) |
+| `sonar-remedy-config` | the interactive config wizard |
+| `sonar-remedy-mcp` | the MCP server for the editor |
+
+**B. Run without installing** (skip `pip install`, call the module directly):
+
+```powershell
+python -B SonarRemedy/sonar_remedy.py --help
+```
+
+**Development:** use an editable install so your edits take effect immediately:
+
+```powershell
+python -m pip install -e .
+```
+
 ## What it does
 
 1. **Fetch** — pulls open issues, measures, and the quality gate from Sonar (chunked when the project exceeds the issue budget).
@@ -14,24 +46,47 @@ Recover SonarQube technical debt automatically — a **proposal-only worker swar
 
 ```powershell
 # 1. Configure a project (Sonar URL, project key, token, repo, branch)
-python -B sonar_remedy_config.py --project <name> --persist
+sonar-remedy-config --project <name> --persist
 
 # 2. Fetch Sonar issues (chunked if over the budget)
-python -B sonar_remedy.py --project <name> fetch --repo <path>
+sonarremedy --project <name> fetch --repo <path>
 
 # 3. Slice the queue, run a batch, then resume
-python -B sonar_remedy.py slice --export <export.json> --state <queue> --execute
-python -B sonar_remedy.py run --state <queue> --execute --limit 8
+sonarremedy slice --export <export.json> --state <queue> --execute
+sonarremedy run --state <queue> --execute --limit 8
 # ... workers propose fixes ...
-python -B sonar_remedy.py run --state <queue> --resume --execute
-python -B sonar_remedy.py status --state <queue>
+sonarremedy run --state <queue> --resume --execute
+sonarremedy status --state <queue>
 ```
 
-## VS Code / Copilot Chat (MCP)
+If you skipped the install, replace `sonarremedy` with `python -B SonarRemedy/sonar_remedy.py` and `sonar-remedy-config` with `python -B SonarRemedy/sonar_remedy_config.py`.
+
+To save a project config non-interactively (for scripts), use:
+
+```powershell
+sonarremedy configure-project --name <name> --sonar-url <url> --project-key <key> `
+  --repo-url <git-url> --local-path <path> --worktree-root <path>
+```
+
+## Set up an editor (MCP)
+
+One command wires up VS Code + Copilot Chat:
+
+```powershell
+sonarremedy init --dir <your-project>
+```
+
+It writes:
+
+- `.vscode/mcp.json` — the `sonar-remedy` MCP server (points at this pack).
+- `.github/copilot-instructions.md` — the Copilot instruction.
+
+Reload VS Code, then in Copilot Chat: *"recuperá la deuda de `<proyecto>`"*.
+
+**Manual** (the same two files, by hand):
 
 1. Copy `host-agents/vscode-mcp.json` to the project's `.vscode/mcp.json` (adjust the `args` path).
 2. Copy `host-agents/copilot-instructions.md` to `.github/copilot-instructions.md`.
-3. In Copilot Chat: *"recuperá la deuda de `<proyecto>`"*.
 
 The MCP server exposes every command as a tool: `sonar_remedy_fetch`, `sonar_remedy_slice`, `sonar_remedy_run`, `sonar_remedy_status`, `sonar_remedy_progress`, `sonar_remedy_schedule`, `sonar_remedy_analyze`, `sonar_remedy_run_all`, `sonar_remedy_configure_project`, …
 

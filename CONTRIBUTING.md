@@ -17,6 +17,26 @@ read-only. When you *develop* it (add a command, fix a bug), follow these rules.
 4. No commits/push here — those are separate human operations under the target repo's policy.
 5. Python stdlib only — no pip dependencies (the pack must stay dependency-free).
 
+## Packaging & entry points
+
+The pack is pip-installable (stdlib only). `pyproject.toml` declares three
+console scripts that map to module entry functions:
+
+| Entry point | Module |
+|---|---|
+| `sonarremedy` | `sonar_remedy:main` |
+| `sonar-remedy-mcp` | `sonar_remedy_mcp:serve` |
+| `sonar-remedy-config` | `sonar_remedy_config:main` |
+
+`[tool.setuptools] py-modules` lists every top-level module; **when you add a
+new `.py` module, add it there or the installed package will miss it.**
+
+To develop, install editable once (`python -m pip install -e .`) so edits apply
+immediately. `python -B -m unittest discover -s tests -v` stays the test loop.
+
+CI (`.github/workflows/ci.yml`) runs the full suite, installs the package, and
+smoke-tests the three entry points on `windows-latest`.
+
 ## Architecture map
 
 | Module | Role |

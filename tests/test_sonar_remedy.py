@@ -41,7 +41,7 @@ class BuildFetchConfigTests(unittest.TestCase):
         self.assertEqual(cfg.url, "https://sonar.example.com")
         self.assertEqual(cfg.project, "my-project")
         self.assertEqual(cfg.branch, "main")
-        self.assertEqual(str(cfg.repo), os.path.abspath(self.repo))
+        self.assertEqual(str(cfg.repo), os.path.realpath(self.repo))
 
 
 class FetchCommandTests(unittest.TestCase):
@@ -196,9 +196,12 @@ class ConfigureIntegrateTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
-        self.config_path = os.path.join(self.tmp.name, "config.json")
+        # Resolve the 8.3 short name some Windows runners expose in TEMP
+        # (e.g. C:\Users\RUNNER~1) so hardened path checks see the canonical form.
+        self.base = os.path.realpath(self.tmp.name)
+        self.config_path = os.path.join(self.base, "config.json")
         rc.save(_valid_config(), self.config_path)
-        self.checks_path = os.path.join(self.tmp.name, "checks.json")
+        self.checks_path = os.path.join(self.base, "checks.json")
         with open(self.checks_path, "w", encoding="utf-8") as handle:
             handle.write("{}")
 
@@ -213,7 +216,7 @@ class ConfigureIntegrateTests(unittest.TestCase):
              mock.patch.object(debt_executor, "configure", return_value={"status": "configured"}) as cpatched:
             code = self._run([
                 "--config", self.config_path, "configure",
-                "--state", os.path.join(self.tmp.name, "q"),
+                "--state", os.path.join(self.base, "q"),
                 "--checks", self.checks_path,
                 "--approve-checks-sha256", "abc123",
                 "--execute",
@@ -231,7 +234,7 @@ class ConfigureIntegrateTests(unittest.TestCase):
              mock.patch.object(debt_executor, "integrate", return_value={"status": "locally_verified"}) as ipatched:
             code = self._run([
                 "--config", self.config_path, "integrate",
-                "--state", os.path.join(self.tmp.name, "q"),
+                "--state", os.path.join(self.base, "q"),
                 "--job", "jsomejobid",
                 "--execute",
             ])
@@ -522,6 +525,25 @@ class ConfigureProjectCommandTests(unittest.TestCase):
         self.assertEqual(code, 0)
         cfg = spatched.call_args.args[1]
         self.assertEqual(cfg["repository"]["main_branch"], "feature/Sonar")
+
+
+class InitCommandTests(unittest.TestCase):
+    def test_init_writes_mcp_and_instructions(self):
+        with tempfile.TemporaryDirectory() as d:
+            with contextlib.redirect_stdout(io.StringIO()):
+                code = sonar_remedy.main(["init", "--dir", d])
+            self.assertEqual(code, 0)
+            mcp_path = os.path.join(d, ".vscode", "mcp.json")
+            instr_path = os.path.join(d, ".github", "copilot-instructions.md")
+            self.assertTrue(os.path.isfile(mcp_path))
+            self.assertTrue(os.path.isfile(instr_path))
+            with open(mcp_path, encoding="utf-8") as fh:
+                mcp_content = fh.read()
+            self.assertIn("sonar-remedy", mcp_content)
+            self.assertIn("sonar_remedy_mcp.py", mcp_content)
+            with open(instr_path, encoding="utf-8") as fh:
+                instr_content = fh.read()
+            self.assertIn("sonar_remedy_", instr_content)
 
 
 if __name__ == "__main__":

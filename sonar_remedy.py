@@ -33,6 +33,39 @@ def _load_config(args):
     return rc.load(rc.default_config_path())
 
 
+def _write_init_files(target):
+    """Write .vscode/mcp.json + the Copilot instruction into a project."""
+    pack = os.path.dirname(os.path.abspath(__file__))
+    vscode_dir = os.path.join(target, ".vscode")
+    os.makedirs(vscode_dir, exist_ok=True)
+    mcp_path = os.path.join(vscode_dir, "mcp.json")
+    mcp_config = {
+        "servers": {
+            "sonar-remedy": {
+                "type": "stdio",
+                "command": "python",
+                "args": ["-B", os.path.join(pack, "sonar_remedy_mcp.py")],
+            }
+        }
+    }
+    with open(mcp_path, "w", encoding="utf-8") as handle:
+        json.dump(mcp_config, handle, indent=2)
+
+    github_dir = os.path.join(target, ".github")
+    os.makedirs(github_dir, exist_ok=True)
+    instructions_path = os.path.join(github_dir, "copilot-instructions.md")
+    source = os.path.join(pack, "host-agents", "copilot-instructions.md")
+    if os.path.isfile(source):
+        with open(source, "r", encoding="utf-8") as handle:
+            content = handle.read()
+    else:
+        content = ("# Technical debt → SonarRemedy\n\n"
+                   "Use the `sonar_remedy_*` MCP tools to recover Sonar debt.\n")
+    with open(instructions_path, "w", encoding="utf-8") as handle:
+        handle.write(content)
+    return mcp_path, instructions_path
+
+
 def next_action(states):
     """Deterministic next step from a queue's entry_states."""
     if states.get("pending", 0) > 0:
@@ -180,6 +213,8 @@ def main(argv=None):
     cfgproj_cmd.add_argument("--main-branch", default=None)
     cfgproj_cmd.add_argument("--provider", default="manual")
     cfgproj_cmd.add_argument("--allow-http", action="store_true")
+    init_cmd = commands.add_parser("init", help="write .vscode/mcp.json + the Copilot instruction into a project")
+    init_cmd.add_argument("--dir", help="target project directory (default: current)")
     args = parser.parse_args(argv)
     try:
         if args.command == "projects":
@@ -237,6 +272,12 @@ def main(argv=None):
             rc.save_project(args.name, cfg)
             print(json.dumps({"status": "configured", "project": args.name,
                               "config": rc.project_path(args.name), "main_branch": branch}, sort_keys=True))
+            return 0
+        if args.command == "init":
+            target = os.path.abspath(args.dir or os.getcwd())
+            mcp_path, instructions_path = _write_init_files(target)
+            print(json.dumps({"status": "initialized", "dir": target,
+                              "mcp": mcp_path, "instructions": instructions_path}, sort_keys=True))
             return 0
         rcfg = _load_config(args)
         if args.command == "fetch":
