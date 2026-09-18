@@ -788,6 +788,40 @@ class ConfigureProjectCommandTests(unittest.TestCase):
         self.assertEqual(cfg["repository"]["pat_env"], "GIT_PAT_PROJECT_B")
 
 
+class ConfigureProjectsCommandTests(unittest.TestCase):
+    def test_configure_projects_loops_and_saves(self):
+        inputs = iter(
+            [
+                # projA
+                "projA",
+                "https://sonar.a.com",
+                "key-a",
+                "",
+                "https://github.com/o/a",
+                "C:/wt-a",
+                "",
+                # projB
+                "projB",
+                "https://sonar.b.com",
+                "key-b",
+                "SONAR_TOKEN_B",
+                "https://github.com/o/b",
+                "C:/wt-b",
+                "",
+                # finish
+                "",
+            ]
+        )
+        with mock.patch("builtins.input", side_effect=lambda *_: next(inputs)):
+            with mock.patch.object(rc, "save_project") as spatched:
+                with contextlib.redirect_stdout(io.StringIO()):
+                    code = sonar_remedy.main(["configure-projects"])
+        self.assertEqual(code, 0)
+        self.assertEqual([c.args[0] for c in spatched.call_args_list], ["projA", "projB"])
+        self.assertEqual(spatched.call_args_list[0].args[1]["sonar"]["token_env"], "SONAR_TOKEN")
+        self.assertEqual(spatched.call_args_list[1].args[1]["sonar"]["token_env"], "SONAR_TOKEN_B")
+
+
 class InitCommandTests(unittest.TestCase):
     def test_init_writes_mcp_and_instructions(self):
         with tempfile.TemporaryDirectory() as d:

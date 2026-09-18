@@ -2,6 +2,14 @@
 
 All notable changes to SonarRemedy are documented here.
 
+## [0.2.4] - 2026-09-18
+
+### Added
+
+- **`--version`** — `sonarremedy --version` prints the installed version.
+- **`configure-projects`** — interactive wizard to register multiple projects at once (name, Sonar URL, project key, token env var).
+- **Update docs** — README "Update" section (`git pull` + `pip install .`).
+
 ## [0.2.3] - 2026-09-18
 
 ### Added

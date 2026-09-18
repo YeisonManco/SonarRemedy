@@ -313,7 +313,7 @@ def _handle(message: dict[str, Any]) -> dict[str, Any] | None:
             "result": {
                 "protocolVersion": "2024-11-05",
                 "capabilities": {"tools": {}},
-                "serverInfo": {"name": "sonar-remedy", "version": "0.1.0"},
+                "serverInfo": {"name": "sonar-remedy", "version": sonar_remedy.__version__},
             },
         }
     if method == "tools/list":

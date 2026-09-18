@@ -36,6 +36,18 @@ python -m pip install -e .
 
 > **Important:** this installs the CLI for the **terminal only**. Copilot Chat in VS Code does **not** know about SonarRemedy until you run `sonarremedy init` in your project — see [Set up an editor](#set-up-an-editor-mcp). Install and editor setup are **two separate steps**.
 
+## Update
+
+The pack is installed from the git clone, so updating is `git pull` + reinstall:
+
+```powershell
+cd C:\Users\jeiss\source\repos\SonarRemedy   # your clone
+git pull
+python -m pip install .
+```
+
+Check the installed version with `sonarremedy --version`.
+
 ## What it does
 
 1. **Fetch** — pulls open issues, measures, and the quality gate from Sonar (chunked when the project exceeds the issue budget).

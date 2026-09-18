@@ -3,10 +3,17 @@
 import argparse
 import json
 import os
+from importlib.metadata import PackageNotFoundError
+from importlib.metadata import version as _dist_version
 from typing import Any
 
 import sonar_fetch
 import sonar_remedy_config as rc
+
+try:
+    __version__ = _dist_version("sonarremedy")
+except PackageNotFoundError:  # running from source without an install
+    __version__ = "dev"
 
 
 def build_fetch_config(rcfg: dict[str, Any], repo: str) -> sonar_fetch.Config:
@@ -238,10 +245,52 @@ def language_hint_for(path: str) -> str:
     return LANGUAGE_HINTS.get(language_for(path), "")
 
 
+def _configure_projects_interactive() -> int:
+    """Interactively register multiple projects; each needs name, Sonar URL, key, token env."""
+    saved: list[str] = []
+    while True:
+        try:
+            name = input("Project name (empty to finish): ").strip()
+        except EOFError:
+            break
+        if not name:
+            break
+        url = input("  Sonar URL: ").strip()
+        key = input("  Project key: ").strip()
+        token_env = input("  Token env var [SONAR_TOKEN]: ").strip() or "SONAR_TOKEN"
+        repo_url = input("  Repo URL: ").strip()
+        worktree = input("  Worktree root: ").strip()
+        branch = input("  Main branch [main]: ").strip() or "main"
+        cfg = {
+            "version": 1,
+            "sonar": {"url": url, "project_key": key, "token_env": token_env},
+            "repository": {
+                "url": repo_url,
+                "pat_env": "GIT_PAT",
+                "main_branch": branch,
+                "propagation_branches": [],
+            },
+            "worktrees": {"root": worktree},
+            "provider": "manual",
+        }
+        errors = rc.validate(cfg)
+        if errors:
+            for error in errors:
+                print(f"  ! {error}")
+            print("  Skipping this project; fix the fields and retry.")
+            continue
+        rc.save_project(name, cfg)
+        saved.append(name)
+        print(f"  saved: {name}")
+    print(json.dumps({"status": "ok", "saved": saved}, sort_keys=True))
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", help="explicit config file (overrides --project)")
     parser.add_argument("--project", help="project name in ~/.sonar-remedy/projects/")
+    parser.add_argument("--version", action="version", version=f"sonarremedy {__version__}")
     commands = parser.add_subparsers(dest="command", required=True)
     fetch = commands.add_parser("fetch", help="collect Sonar issues using the persisted config")
     fetch.add_argument("--repo", help="local main checkout (overrides repository.local_path)")
@@ -315,6 +364,7 @@ def main(argv: list[str] | None = None) -> int:
         "--token-env", default="SONAR_TOKEN", help="env var name for the Sonar token"
     )
     cfgproj_cmd.add_argument("--pat-env", default="GIT_PAT", help="env var name for the Git PAT")
+    commands.add_parser("configure-projects", help="interactively register multiple projects")
     init_cmd = commands.add_parser(
         "init", help="write .vscode/mcp.json + the Copilot instruction into a project"
     )
@@ -425,6 +475,8 @@ def main(argv: list[str] | None = None) -> int:
                 )
             )
             return 0
+        if args.command == "configure-projects":
+            return _configure_projects_interactive()
         if args.command == "init":
             target = os.path.abspath(args.dir or os.getcwd())
             mcp_path, instructions_path = _write_init_files(target)
