@@ -34,6 +34,8 @@ python -B SonarRemedy/sonar_remedy.py --help
 python -m pip install -e .
 ```
 
+> **Important:** this installs the CLI for the **terminal only**. Copilot Chat in VS Code does **not** know about SonarRemedy until you run `sonarremedy init` in your project — see [Set up an editor](#set-up-an-editor-mcp). Install and editor setup are **two separate steps**.
+
 ## What it does
 
 1. **Fetch** — pulls open issues, measures, and the quality gate from Sonar (chunked when the project exceeds the issue budget).
@@ -146,6 +148,14 @@ It writes:
 - `.github/copilot-instructions.md` — the Copilot instruction.
 
 Reload VS Code, then in Copilot Chat: *"recuperá la deuda de `<proyecto>`"*.
+
+**Verify it's wired up** (optional): confirm the two files exist, then test the server in a terminal:
+
+```powershell
+'{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}' | sonar-remedy-mcp
+```
+
+It should reply with `"serverInfo":{"name":"sonar-remedy"...}`. In VS Code, the `sonar_remedy_*` tools then appear in Copilot Chat (you may need to reload the window: Ctrl+Shift+P → "Developer: Reload Window").
 
 **Manual** (the same two files, by hand):
 
