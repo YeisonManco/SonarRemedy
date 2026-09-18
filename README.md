@@ -38,15 +38,14 @@ python -m pip install -e .
 
 ## Update
 
-The pack is installed from the git clone, so updating is `git pull` + reinstall:
+Update the pack with one command:
 
 ```powershell
-cd C:\Users\jeiss\source\repos\SonarRemedy   # your clone
-git pull
-python -m pip install .
+sonarremedy update                          # run it from your clone, or:
+sonarremedy update --path C:\path\to\SonarRemedy
 ```
 
-Check the installed version with `sonarremedy --version`.
+It runs `git pull` + `pip install` for you. Check the version with `sonarremedy --version`.
 
 ## What it does
 
@@ -118,7 +117,9 @@ what the mechanical tools cannot: understanding the code and writing an idiomati
 | `run-all` | Fetch + slice every chunk into its own queue |
 | `projects` | List saved project configs |
 | `configure-project` | Save a project config non-interactively |
+| `configure-projects` | Interactively register multiple projects |
 | `init` | Wire up VS Code + Copilot (`.vscode/mcp.json` + instructions) |
+| `update` | `git pull` + reinstall the pack from its clone |
 
 ## Quick start
 

@@ -3,6 +3,8 @@
 import argparse
 import json
 import os
+import subprocess
+import sys
 from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as _dist_version
 from typing import Any
@@ -286,6 +288,33 @@ def _configure_projects_interactive() -> int:
     return 0
 
 
+def _update(path: str | None) -> int:
+    """git pull + pip install the pack from its clone."""
+    target = os.path.abspath(path) if path else os.getcwd()
+    if not os.path.isdir(os.path.join(target, ".git")):
+        print(
+            json.dumps(
+                {
+                    "status": "blocked",
+                    "error": (
+                        f"not a git checkout: {target}. Run from your SonarRemedy clone, "
+                        "or pass --path <clone>."
+                    ),
+                },
+                sort_keys=True,
+            )
+        )
+        return 2
+    try:
+        subprocess.run(["git", "-C", target, "pull"], check=True)
+        subprocess.run([sys.executable, "-m", "pip", "install", target], check=True)
+    except subprocess.CalledProcessError as error:
+        print(json.dumps({"status": "blocked", "error": str(error)}, sort_keys=True))
+        return 2
+    print(json.dumps({"status": "updated", "path": target}, sort_keys=True))
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", help="explicit config file (overrides --project)")
@@ -365,6 +394,8 @@ def main(argv: list[str] | None = None) -> int:
     )
     cfgproj_cmd.add_argument("--pat-env", default="GIT_PAT", help="env var name for the Git PAT")
     commands.add_parser("configure-projects", help="interactively register multiple projects")
+    update_cmd = commands.add_parser("update", help="git pull + reinstall the pack from its clone")
+    update_cmd.add_argument("--path", help="SonarRemedy clone directory (default: current)")
     init_cmd = commands.add_parser(
         "init", help="write .vscode/mcp.json + the Copilot instruction into a project"
     )
@@ -477,6 +508,8 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         if args.command == "configure-projects":
             return _configure_projects_interactive()
+        if args.command == "update":
+            return _update(args.path)
         if args.command == "init":
             target = os.path.abspath(args.dir or os.getcwd())
             mcp_path, instructions_path = _write_init_files(target)

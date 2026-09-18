@@ -8,7 +8,8 @@ All notable changes to SonarRemedy are documented here.
 
 - **`--version`** — `sonarremedy --version` prints the installed version.
 - **`configure-projects`** — interactive wizard to register multiple projects at once (name, Sonar URL, project key, token env var).
-- **Update docs** — README "Update" section (`git pull` + `pip install .`).
+- **`update`** — `sonarremedy update` runs `git pull` + `pip install` from the clone (optional `--path`).
+- **Update docs** — README "Update" section.
 
 ## [0.2.3] - 2026-09-18
 
