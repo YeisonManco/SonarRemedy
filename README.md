@@ -42,6 +42,32 @@ python -m pip install -e .
 4. **Integrate** — a single serial integrator applies proposals, runs configured checks (RED/GREEN), and verifies byte-for-byte.
 5. **Track** — `status`/`progress` report the next action, remaining jobs, and an ETA.
 
+## How it works
+
+```mermaid
+flowchart TD
+    U["User: recover the debt of X"] --> O[Orchestrator<br/>AI drives the CLI]
+    O --> F[fetch<br/>Sonar issues to export.json]
+    F --> S[slice<br/>build durable queue]
+    S --> R[run --execute<br/>lease N jobs, one job.json each]
+    R --> W1[Worker 1<br/>proposal-only]
+    R --> W2[Worker 2<br/>proposal-only]
+    R --> WN[Worker N<br/>proposal-only]
+    W1 --> I[Serial integrator<br/>apply, RED, GREEN, verify]
+    W2 --> I
+    WN --> I
+    I --> ST[status<br/>next action + ETA]
+    ST -->|re-scan| F
+```
+
+**Concurrency model:**
+
+- **One worktree per branch** — set up once by the orchestrator, never one per worker.
+- Workers **propose in parallel** — each is isolated (no tools, no repo access) and reads only its own `job.json`.
+- The integrator **applies serially** — one proposal at a time (RED → GREEN → byte-for-byte), even though proposals were prepared in parallel.
+- **No commits/push in the pack** — the integrator edits the files; committing and pushing are separate human operations.
+- Each **branch** gets its own queue + worktree + evidence; fixes never cross branches.
+
 ## Architecture
 
 **Python does all the mechanical analysis; the AI does exactly one thing — propose the fix.**
