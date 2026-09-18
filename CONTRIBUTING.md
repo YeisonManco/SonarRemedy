@@ -41,7 +41,7 @@ smoke-tests the three entry points on `windows-latest`.
 
 | Module | Role |
 |---|---|
-| `sonar_remedy_config.py` | config wizard + project store (`~/.SonarRemedy/projects/<name>.json`); secrets in env only |
+| `sonar_remedy_config.py` | config wizard + project store (`~/.sonar-remedy/projects/<name>.json`); secrets in env only |
 | `sonar_remedy.py` | facade CLI — every user-facing subcommand lives here |
 | `sonar_remedy_mcp.py` | MCP server — exposes each subcommand as a tool |
 | `debt_queue.py` / `debt_work.py` | durable SQLite queue (state, binding, claims, leases) |
@@ -64,6 +64,19 @@ MUST make the same change in ALL of these, in one commit:**
 green. The MCP server is the bridge from "run commands" to "talk to the editor";
 it drifts silently if you forget it.
 
+## Documentation sync rule (MANDATORY)
+
+Every user-visible change ships its docs in the **same commit**:
+
+1. **`CHANGELOG.md`** — a new command, renamed flag, or fixed bug gets an entry
+   (under a new version, or `## Unreleased` between releases).
+2. **`README.md`** — a new/renamed command, an install change, or a Quick-start
+   step change is reflected here (Install, Quick start, editor setup, Safety
+   boundaries).
+
+No test catches a stale CHANGELOG or README — keep them in sync by hand with the
+code, exactly like the MCP sync rule above.
+
 ## Shared constants
 
 - `debtpack.MAX_ISSUES` = the issue budget (single source of truth; imported by
@@ -76,13 +89,13 @@ it drifts silently if you forget it.
 2. Per-kind fix hints are **distilled** (`sonar_remedy.FIX_HINTS` / `hint_for`), never
    the full vendor skill. Keep them <600 chars.
 3. Reports (`monitor`/`status`/`progress`) return **counts**, not source or issue lists.
-4. All runtime data (config, queues, exports) lives in `~/.SonarRemedy/`, **never** in
+4. All runtime data (config, queues, exports) lives in `~/.sonar-remedy/`, **never** in
    the pack folder — keep the pack's workspace small.
 
 ## Where things are stored
 
-- Config + projects: `~/.SonarRemedy/config.json`, `~/.SonarRemedy/projects/<name>.json`.
-- Fetch exports: `~/.SonarRemedy/runs/<project>/` (or `--output`).
+- Config + projects: `~/.sonar-remedy/config.json`, `~/.sonar-remedy/projects/<name>.json`.
+- Fetch exports: `~/.sonar-remedy/runs/<project>/` (or `--output`).
 - Queues: a user-chosen `--state` directory (outside the target repo).
 - Secrets (`SONAR_TOKEN`, `GIT_PAT`): environment only — never in files, args, or prompts.
 
