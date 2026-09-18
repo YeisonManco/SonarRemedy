@@ -187,6 +187,57 @@ def hint_for(kind: str) -> str:
     return FIX_HINTS.get(kind, "")
 
 
+EXTENSION_LANGUAGE = {
+    ".py": "python",
+    ".cs": "csharp",
+    ".vb": "vb",
+    ".java": "java",
+    ".kt": "kotlin",
+    ".kts": "kotlin",
+    ".ts": "typescript",
+    ".tsx": "typescript",
+    ".js": "javascript",
+    ".jsx": "javascript",
+    ".mjs": "javascript",
+    ".cjs": "javascript",
+    ".go": "go",
+    ".rs": "rust",
+    ".cpp": "cpp",
+    ".cc": "cpp",
+    ".cxx": "cpp",
+    ".h": "cpp",
+    ".hpp": "cpp",
+    ".cshtml": "csharp",
+    ".razor": "csharp",
+}
+
+# Distilled per-language fix guidance (kept short). The full skill lives in
+# skills/<language>-index.md; the orchestrator reads it and injects this summary
+# alongside hint_for(kind) so the worker fixes using BOTH the kind and the language.
+LANGUAGE_HINTS = {
+    "python": "Python: stdlib-first; ruff/mypy-clean code, f-strings, pathlib, type hints; no bare noqa/type:ignore.",
+    "csharp": "C#/.NET: see dotnet/skills; prefer nullability, LINQ, analyzers; avoid #pragma warning disable.",
+    "vb": "VB.NET: follow .NET conventions; avoid SuppressMessage unless justified.",
+    "java": "Java: prefer records, streams, sealed types; avoid @SuppressWarnings unless justified.",
+    "kotlin": "Kotlin: prefer data classes and when; avoid @Suppress unless justified.",
+    "typescript": "TypeScript/Angular: strict mode, type guards, no @ts-ignore; Angular: OnPush, trackBy, reactive forms.",
+    "javascript": "JavaScript/React: const/let, arrow functions, no eslint-disable; React: hooks rules, keyed lists.",
+    "go": "Go: gofmt-clean, explicit error handling, no unused imports.",
+    "rust": "Rust: prefer match + Option/Result; no #[allow] unless justified.",
+    "cpp": "C/C++: prefer RAII and smart pointers; avoid #pragma suppression.",
+}
+
+
+def language_for(path: str) -> str:
+    """Map a file path to its language key ('' when unknown)."""
+    return EXTENSION_LANGUAGE.get(os.path.splitext(path)[1].lower(), "")
+
+
+def language_hint_for(path: str) -> str:
+    """Short language-specific fix guidance for a job's file path."""
+    return LANGUAGE_HINTS.get(language_for(path), "")
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", help="explicit config file (overrides --project)")

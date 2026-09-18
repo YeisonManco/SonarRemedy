@@ -2,6 +2,13 @@
 
 All notable changes to SonarRemedy are documented here.
 
+## [0.2.1] - 2026-09-18
+
+### Added
+
+- **Language skills** — `skills/angular-index.md` and `skills/react-index.md` (joining `dotnet-index.md` and `python-index.md`), mapping each language's debt problems to its authoritative tools.
+- **Language detection + hints** — `language_for(path)` and `language_hint_for(path)` return a short per-language fix hint so workers fix idiomatically. The orchestrator now reads the per-language skill AND the Sonar fix-issue skill, injecting both distilled hints into the worker prompt.
+
 ## [0.2.0] - 2026-09-18
 
 ### Added

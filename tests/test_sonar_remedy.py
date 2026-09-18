@@ -602,6 +602,37 @@ class HintTests(unittest.TestCase):
             self.assertLess(len(sonar_remedy.hint_for(kind)), 600)
 
 
+class LanguageHintTests(unittest.TestCase):
+    def test_language_for_detects_extension(self):
+        cases = {
+            "src/a.py": "python",
+            "src/B.cs": "csharp",
+            "src/app.ts": "typescript",
+            "src/App.tsx": "typescript",
+            "src/App.jsx": "javascript",
+            "src/B.java": "java",
+            "src/main.go": "go",
+            "src/lib.rs": "rust",
+        }
+        for path, expected in cases.items():
+            self.assertEqual(sonar_remedy.language_for(path), expected)
+
+    def test_language_for_unknown_is_empty(self):
+        self.assertEqual(sonar_remedy.language_for("README.md"), "")
+
+    def test_language_hint_covers_key_languages(self):
+        # Angular/React/.NET/Python must all have distilled guidance.
+        for path in ("x.py", "x.cs", "x.ts", "x.jsx"):
+            self.assertTrue(sonar_remedy.language_hint_for(path))
+
+    def test_language_hint_is_short(self):
+        for path in ("x.py", "x.cs", "x.ts", "x.jsx"):
+            self.assertLess(len(sonar_remedy.language_hint_for(path)), 600)
+
+    def test_language_hint_unknown_empty(self):
+        self.assertEqual(sonar_remedy.language_hint_for("README.md"), "")
+
+
 class RunAllCommandTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()

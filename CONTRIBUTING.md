@@ -87,6 +87,16 @@ Every user-visible change ships its docs in the **same commit**:
 No test catches a stale CHANGELOG or README — keep them in sync by hand with the
 code, exactly like the MCP sync rule above.
 
+## Language skills (keep in sync)
+
+`skills/<language>-index.md` maps a language's debt problems to its authoritative
+tools (`.NET` → `dotnet-index.md`, `python-index.md`, `angular-index.md`,
+`react-index.md`), and `sonar_remedy.language_hint_for(path)` returns a short
+distilled hint for that language. When you add a language (or a debt tool for
+one), update BOTH the index file and `EXTENSION_LANGUAGE`/`LANGUAGE_HINTS` in
+`sonar_remedy.py`. Workers fix using the kind hint (`hint_for`) AND the language
+hint (`language_hint_for`), so both must stay accurate.
+
 ## Shared constants
 
 - `debtpack.MAX_ISSUES` = the issue budget (single source of truth; imported by

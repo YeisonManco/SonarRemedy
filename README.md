@@ -103,6 +103,8 @@ The MCP server exposes every command as a tool: `sonar_remedy_fetch`, `sonar_rem
 
 See `CONTRIBUTING.md` — TDD (RED/GREEN), Python stdlib only (no pip dependencies), and keep the MCP server in sync with the CLI. The full queue contract is in `docs/work-queue.md`.
 
+Per-language fix skills live in `skills/` — `dotnet-index.md`, `python-index.md`, `angular-index.md`, `react-index.md`, plus the Sonar workflow skills under `skills/sonar/`. A worker fixes using both the kind hint and the language hint.
+
 ## Tests
 
 ```powershell

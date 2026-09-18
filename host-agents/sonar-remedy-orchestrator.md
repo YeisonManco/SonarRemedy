@@ -44,10 +44,14 @@ When the user says "recuperá la deuda del proyecto X" (or similar):
 3. **Produce proposals (worker step)**: for each leased job, produce a proposal
    from the bounded `job.json` — either by reasoning yourself, or by delegating to
    a fresh proposal-only worker sub-agent (a separate, possibly cheaper model) that
-   reads ONLY the `job.json` and returns `proposal.json`. Include the job kind's
-   distilled fix hint (`sonar_remedy.hint_for(kind)`, a short "how to fix" — never the
-   full vendor skill). Write each proposal to its inbox `proposal_path`. The worker
-   never touches the target repo.
+   reads ONLY the `job.json` and returns `proposal.json`. Include BOTH distilled
+   fix hints: the job kind's (`sonar_remedy.hint_for(kind)`) AND the file language's
+   (`sonar_remedy.language_hint_for(path)`). For more depth, READ the per-language
+   skill (`skills/<language>-index.md`, e.g. `dotnet-index.md`, `python-index.md`,
+   `angular-index.md`, `react-index.md`) and the Sonar fix skill
+   (`skills/sonar/sonar-fix-issue/SKILL.md`) yourself, then inject their DISTILLED
+   guidance into the worker prompt — never dump the full skills. Write each proposal
+   to its inbox `proposal_path`. The worker never touches the target repo.
    Proposal v1 shape: `status` "proposed", `edits=[{path, before_sha256,
    replacements:[{old,new}]}]`, `reason` matches `^[A-Za-z0-9_.-]{1,128}$`
    (no spaces), plus `risks` and `test_plan`.

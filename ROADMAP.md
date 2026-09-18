@@ -26,6 +26,7 @@
 
 - [x] **Type hints + formatting** — every production function annotated; ruff linter + formatter clean.
 - [x] **Suppression scan** — mechanical detector of Sonar-evasion directives (`certain`/`ambiguous`), wired as `scan-suppressions` + MCP tool.
+- [x] **Language skills** — `.NET`, `Python`, `Angular`, `React` indexes + per-language fix hints (`language_hint_for`).
 
 ## Current state
 
