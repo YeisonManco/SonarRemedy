@@ -17,6 +17,16 @@ read-only. When you *develop* it (add a command, fix a bug), follow these rules.
 4. No commits/push here — those are separate human operations under the target repo's policy.
 5. Python stdlib only — no pip dependencies (the pack must stay dependency-free).
 
+## Code style (ruff + type hints)
+
+- **Ruff** is the linter + formatter (config in `pyproject.toml`). Before finishing, run
+  `python -m ruff format .` then `python -m ruff check .` — both must pass. Install it once
+  as a dev tool (`python -m pip install ruff`); it is NOT a runtime dependency.
+- **Type hints** cover every function signature (parameters + return) in the production
+  modules. Use py3.11 builtins (`str | None`, `list[str]`, `dict[str, Any]`), `Path` for
+  paths, and `Callable` from `collections.abc` (not `typing` — ruff's UP035 rejects it).
+  Never add a runtime dependency just for a type.
+
 ## Packaging & entry points
 
 The pack is pip-installable (stdlib only). `pyproject.toml` declares three

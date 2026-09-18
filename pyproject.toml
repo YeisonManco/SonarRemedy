@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "sonarremedy"
-version = "0.1.0"
+version = "0.1.2"
 description = "Recover Sonar technical debt automatically — a proposal-only worker swarm with a serial integrator."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -28,3 +28,13 @@ py-modules = [
     "debt_work", "debt_queue", "debt_executor", "debt_runner", "debt_transport", "debtpack",
     "sonar_client", "sonar_fetch", "sonar_local", "sonar_exclusions", "sonar_gateway",
 ]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "I", "UP", "B", "SIM", "C4"]
+# Nested `with` in tests (e.g. `with patch.object(...): with self.assertRaises(...):`)
+# is intentionally kept for readability; SIM117 wants them flattened.
+ignore = ["SIM117"]

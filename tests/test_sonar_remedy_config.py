@@ -1,4 +1,5 @@
 """Tests for the SonarRemedy first-run config wizard and store."""
+
 import json
 import os
 import tempfile
@@ -32,18 +33,20 @@ def _valid_config(**overrides):
 class NormalizeTests(unittest.TestCase):
     def test_base_url_unchanged(self):
         self.assertEqual(
-            rc.normalize_sonar_url("https://sonar.example.com/"),
-            "https://sonar.example.com")
+            rc.normalize_sonar_url("https://sonar.example.com/"), "https://sonar.example.com"
+        )
 
     def test_dashboard_url_reduces_to_base(self):
         self.assertEqual(
             rc.normalize_sonar_url("https://sonar.example.com/dashboard?id=my-project"),
-            "https://sonar.example.com")
+            "https://sonar.example.com",
+        )
 
     def test_proxy_path_stripped_of_query(self):
         self.assertEqual(
             rc.normalize_sonar_url("https://host/sonar/dashboard?x=1"),
-            "https://host/sonar/dashboard")
+            "https://host/sonar/dashboard",
+        )
 
     def test_rejects_embedded_sqa_token(self):
         with self.assertRaises(rc.ConfigError):
@@ -64,8 +67,7 @@ class NormalizeTests(unittest.TestCase):
 
 class DetectTests(unittest.TestCase):
     def test_from_id_query(self):
-        self.assertEqual(
-            rc.detect_project_key("https://h/dashboard?id=my-project"), "my-project")
+        self.assertEqual(rc.detect_project_key("https://h/dashboard?id=my-project"), "my-project")
 
     def test_from_last_path_segment(self):
         self.assertEqual(rc.detect_project_key("https://h/my-project"), "my-project")
@@ -86,7 +88,8 @@ class ValidateTests(unittest.TestCase):
     def test_bad_provider(self):
         self.assertEqual(
             rc.validate(_valid_config(provider="nope")),
-            ["provider must be one of: " + ", ".join(rc.PROVIDERS)])
+            ["provider must be one of: " + ", ".join(rc.PROVIDERS)],
+        )
 
     def test_token_env_not_env_name(self):
         cfg = _valid_config()
@@ -127,7 +130,7 @@ class SaveLoadTests(unittest.TestCase):
     def test_secret_never_in_file(self):
         cfg = _valid_config()
         rc.save(cfg, self.path)
-        with open(self.path, "r", encoding="utf-8") as handle:
+        with open(self.path, encoding="utf-8") as handle:
             raw = handle.read()
         self.assertNotIn("sqa_", raw)
         self.assertEqual(json.loads(raw)["sonar"]["token_env"], "SONAR_TOKEN")
@@ -140,15 +143,17 @@ class PromptTests(unittest.TestCase):
         self.addCleanup(lambda: self._restore("SONAR_TOKEN", saved_token))
         self.addCleanup(lambda: self._restore("GIT_PAT", saved_pat))
 
-        inputs = iter([
-            "https://sonar.example.com/dashboard?id=my-project",  # sonar url
-            "https://github.com/org/repo.git",                    # repo url
-            "C:/work/repo",                                       # local repo path
-            "main",                                               # main branch
-            "",                                                   # propagation branches
-            "C:/work/worktrees",                                  # worktree root
-            "opencode",                                           # provider
-        ])
+        inputs = iter(
+            [
+                "https://sonar.example.com/dashboard?id=my-project",  # sonar url
+                "https://github.com/org/repo.git",  # repo url
+                "C:/work/repo",  # local repo path
+                "main",  # main branch
+                "",  # propagation branches
+                "C:/work/worktrees",  # worktree root
+                "opencode",  # provider
+            ]
+        )
 
         def fake_secret(*args, **kwargs):
             message = args[0] if args else ""
@@ -204,8 +209,9 @@ class ProjectStoreTests(unittest.TestCase):
 
 class DetectBranchTests(unittest.TestCase):
     def test_from_branch_query(self):
-        self.assertEqual(rc.detect_branch("https://h/dashboard?id=p&branch=feature/Sonar"),
-                         "feature/Sonar")
+        self.assertEqual(
+            rc.detect_branch("https://h/dashboard?id=p&branch=feature/Sonar"), "feature/Sonar"
+        )
 
     def test_no_branch(self):
         self.assertEqual(rc.detect_branch("https://h/dashboard?id=p"), "")

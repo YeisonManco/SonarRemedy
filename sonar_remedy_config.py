@@ -5,11 +5,14 @@ persists non-secret configuration to a JSON file and keeps secrets (the Sonar
 token and repository PAT) in environment variables only. The stored config
 references the environment-variable NAMES, never the secret values.
 """
+
 import argparse
 import getpass
 import json
 import os
 import re
+from collections.abc import Callable
+from typing import Any
 from urllib.parse import unquote, urlsplit, urlunsplit
 
 CONFIG_VERSION = 1
@@ -23,7 +26,7 @@ class ConfigError(ValueError):
     """Raised for invalid or unsafe SonarRemedy configuration."""
 
 
-def normalize_sonar_url(raw):
+def normalize_sonar_url(raw: str) -> str:
     """Return the API base URL for a base or dashboard Sonar URL.
 
     Rejects empty values, non-http(s) schemes and URLs that embed a token
@@ -46,7 +49,7 @@ def normalize_sonar_url(raw):
     return raw
 
 
-def detect_project_key(url):
+def detect_project_key(url: str) -> str:
     """Extract the project key from a full URL (``?id=`` or last path segment)."""
     parts = urlsplit(url or "")
     if parts.query:
@@ -59,7 +62,7 @@ def detect_project_key(url):
     return ""
 
 
-def detect_branch(url):
+def detect_branch(url: str) -> str:
     """Extract the branch from a full URL's ``?branch=`` query, if present."""
     parts = urlsplit(url or "")
     if parts.query:
@@ -69,13 +72,13 @@ def detect_branch(url):
     return ""
 
 
-def validate(cfg):
+def validate(cfg: dict[str, Any]) -> list[str]:
     """Return a list of human-readable validation errors; empty means valid."""
     if not isinstance(cfg, dict):
         return ["config must be an object"]
     errors = []
     if cfg.get("version") != CONFIG_VERSION:
-        errors.append("unsupported config version (expected %d)" % CONFIG_VERSION)
+        errors.append(f"unsupported config version (expected {CONFIG_VERSION})")
 
     sonar = cfg.get("sonar")
     if not isinstance(sonar, dict):
@@ -122,7 +125,7 @@ def validate(cfg):
     return errors
 
 
-def save(cfg, path):
+def save(cfg: dict[str, Any], path: str) -> None:
     """Validate and atomically write the config to ``path``."""
     errors = validate(cfg)
     if errors:
@@ -136,9 +139,9 @@ def save(cfg, path):
     os.replace(tmp, path)
 
 
-def load(path):
+def load(path: str) -> dict[str, Any]:
     """Read and validate a config file."""
-    with open(path, "r", encoding="utf-8") as handle:
+    with open(path, encoding="utf-8") as handle:
         data = json.load(handle)
     errors = validate(data)
     if errors:
@@ -146,42 +149,45 @@ def load(path):
     return data
 
 
-def default_config_path():
+def default_config_path() -> str:
     return os.path.join(os.path.expanduser("~"), ".sonar-remedy", "config.json")
 
 
 PROJECT_NAME_RE = re.compile(r"^[A-Za-z0-9_.-]{1,64}$")
 
 
-def projects_dir():
+def projects_dir() -> str:
     return os.path.join(os.path.expanduser("~"), ".sonar-remedy", "projects")
 
 
-def project_path(name):
+def project_path(name: str) -> str:
     if not PROJECT_NAME_RE.match(name):
         raise ConfigError("project name must match [A-Za-z0-9_.-]{1,64}")
     return os.path.join(projects_dir(), name + ".json")
 
 
-def save_project(name, cfg):
+def save_project(name: str, cfg: dict[str, Any]) -> None:
     save(cfg, project_path(name))
 
 
-def load_project(name):
+def load_project(name: str) -> dict[str, Any]:
     path = project_path(name)
     if not os.path.isfile(path):
         raise ConfigError("project not found: " + name)
     return load(path)
 
 
-def list_projects():
+def list_projects() -> list[str]:
     directory = projects_dir()
     if not os.path.isdir(directory):
         return []
     return sorted(name[:-5] for name in os.listdir(directory) if name.endswith(".json"))
 
 
-def prompt(input_fn=input, secret_fn=getpass.getpass):
+def prompt(
+    input_fn: Callable[[str], str] = input,
+    secret_fn: Callable[[str], str] = getpass.getpass,
+) -> dict[str, Any]:
     """Interactively gather a validated config; secrets go to env, never the dict."""
     url_raw = input_fn("SonarQube URL (base, or full URL with project key): ")
     url = normalize_sonar_url(url_raw)
@@ -225,7 +231,9 @@ def prompt(input_fn=input, secret_fn=getpass.getpass):
     if not worktree_root:
         raise ConfigError("worktree root must not be empty")
 
-    provider = input_fn("Provider (manual/opencode/codex/claude/copilot) [manual]: ").strip() or "manual"
+    provider = (
+        input_fn("Provider (manual/opencode/codex/claude/copilot) [manual]: ").strip() or "manual"
+    )
     if provider not in PROVIDERS:
         raise ConfigError("provider must be one of: " + ", ".join(PROVIDERS))
 
@@ -251,26 +259,31 @@ def prompt(input_fn=input, secret_fn=getpass.getpass):
     }
 
 
-def persist_user_env(cfg):
+def persist_user_env(cfg: dict[str, Any]) -> None:
     """Best-effort: persist the referenced secrets to user-level env (Windows)."""
     try:
         import winreg
     except ImportError:
-        raise ConfigError("user-level persistence is only supported on Windows")
+        raise ConfigError("user-level persistence is only supported on Windows") from None
     for env_name in (cfg["sonar"]["token_env"], cfg["repository"]["pat_env"]):
         value = os.environ.get(env_name)
         if not value:
-            raise ConfigError("secret for %s is not present in the environment" % env_name)
-        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, "Environment", 0, winreg.KEY_SET_VALUE) as key:
+            raise ConfigError(f"secret for {env_name} is not present in the environment")
+        with winreg.OpenKey(
+            winreg.HKEY_CURRENT_USER, "Environment", 0, winreg.KEY_SET_VALUE
+        ) as key:
             winreg.SetValueEx(key, env_name, 0, winreg.REG_SZ, value)
 
 
-def main(argv=None):
+def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", default=default_config_path())
     parser.add_argument("--project", help="save under a project name in ~/.sonar-remedy/projects/")
-    parser.add_argument("--persist", action="store_true",
-                        help="persist secrets to user-level environment variables (Windows)")
+    parser.add_argument(
+        "--persist",
+        action="store_true",
+        help="persist secrets to user-level environment variables (Windows)",
+    )
     args = parser.parse_args(argv)
     try:
         cfg = prompt()
@@ -282,15 +295,26 @@ def main(argv=None):
             target = os.path.abspath(args.config)
         if args.persist:
             persist_user_env(cfg)
-        print(json.dumps({
-            "status": "configured",
-            "config": target,
-            "sonar": {"url": cfg["sonar"]["url"], "project_key": cfg["sonar"]["project_key"]},
-            "repository": {"url": cfg["repository"]["url"], "main_branch": cfg["repository"]["main_branch"]},
-            "provider": cfg["provider"],
-            "sonar_token_env": cfg["sonar"]["token_env"],
-            "repo_pat_env": cfg["repository"]["pat_env"],
-        }, sort_keys=True))
+        print(
+            json.dumps(
+                {
+                    "status": "configured",
+                    "config": target,
+                    "sonar": {
+                        "url": cfg["sonar"]["url"],
+                        "project_key": cfg["sonar"]["project_key"],
+                    },
+                    "repository": {
+                        "url": cfg["repository"]["url"],
+                        "main_branch": cfg["repository"]["main_branch"],
+                    },
+                    "provider": cfg["provider"],
+                    "sonar_token_env": cfg["sonar"]["token_env"],
+                    "repo_pat_env": cfg["repository"]["pat_env"],
+                },
+                sort_keys=True,
+            )
+        )
         return 0
     except ConfigError as error:
         print(json.dumps({"status": "blocked", "reason": str(error)}))

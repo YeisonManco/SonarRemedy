@@ -22,13 +22,13 @@
 - [x] **Install docs** — README install section (pip + no-install fallback) and editor setup via `init`.
 - [x] **Python skills index** — `skills/python-index.md` (mirror of `dotnet-index.md`).
 
-### Nice-to-have (pending)
+### Nice-to-have (done)
 
-- [ ] **Type hints + formatting** — `ruff`/`black`.
+- [x] **Type hints + formatting** — every production function annotated; ruff linter + formatter clean.
 
 ## Current state
 
 - Pack: `sonar_remedy_config.py` (wizard), `sonar_remedy.py` (facade CLI), `sonar_remedy_mcp.py` (MCP server), `debt_*` (queue/integrator/runner), `sonar_*` (fetch/client).
 - 302 tests green.
 - Published to GitHub; editor integration (VS Code + Copilot Chat via MCP) proven against a real Sonar.
-- Pending: type hints + formatting only.
+- Distribution, packaging, install docs, Python skills, and type hints + formatting are all done.

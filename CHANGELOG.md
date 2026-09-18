@@ -2,6 +2,19 @@
 
 All notable changes to SonarRemedy are documented here.
 
+## [0.1.2] - 2026-09-18
+
+### Added
+
+- **Type hints** — every function signature (parameters + return) in the 14 production modules is annotated (py3.11 builtins, `Path`, `collections.abc.Callable`).
+- **Ruff** — linter + formatter configured in `pyproject.toml`; the codebase is fully formatted and lint-clean.
+
+### Changed
+
+- **Exception chaining** — `raise ... from None` for deliberate exception replacements.
+- **Modernized formatting** — `%`-format → f-strings.
+- **Test closures** — loop variables bound as default args (removes latent-closure risk).
+
 ## [0.1.1] - 2026-09-18
 
 ### Added

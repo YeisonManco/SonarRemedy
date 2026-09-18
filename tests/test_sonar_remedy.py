@@ -1,4 +1,5 @@
 """Tests for the SonarRemedy facade that drives the pipeline from config."""
+
 import contextlib
 import io
 import os
@@ -6,16 +7,19 @@ import tempfile
 import unittest
 from unittest import mock
 
+import sonar_fetch
 import sonar_remedy
 import sonar_remedy_config as rc
-import sonar_fetch
 
 
 def _valid_config(**overrides):
     cfg = {
         "version": 1,
-        "sonar": {"url": "https://sonar.example.com", "project_key": "my-project",
-                  "token_env": "SONAR_TOKEN"},
+        "sonar": {
+            "url": "https://sonar.example.com",
+            "project_key": "my-project",
+            "token_env": "SONAR_TOKEN",
+        },
         "repository": {
             "url": "https://github.com/org/repo.git",
             "pat_env": "GIT_PAT",
@@ -104,23 +108,37 @@ class SliceCommandTests(unittest.TestCase):
         cfg = _valid_config()
         del cfg["repository"]["local_path"]
         rc.save(cfg, self.config_path)
-        code = self._run([
-            "--config", self.config_path, "slice",
-            "--export", os.path.join(self.tmp.name, "export.json"),
-            "--state", os.path.join(self.tmp.name, "q"),
-        ])
+        code = self._run(
+            [
+                "--config",
+                self.config_path,
+                "slice",
+                "--export",
+                os.path.join(self.tmp.name, "export.json"),
+                "--state",
+                os.path.join(self.tmp.name, "q"),
+            ]
+        )
         self.assertEqual(code, 2)
 
     def test_slice_maps_config(self):
         import debt_queue
+
         fake = {"status": "dry-run", "binding": {}, "entries": 0, "jobs": 0}
         with mock.patch.object(debt_queue, "slice_queue", return_value=fake) as patched:
-            code = self._run([
-                "--config", self.config_path, "slice",
-                "--repo", self.tmp.name,
-                "--export", os.path.join(self.tmp.name, "export.json"),
-                "--state", os.path.join(self.tmp.name, "q"),
-            ])
+            code = self._run(
+                [
+                    "--config",
+                    self.config_path,
+                    "slice",
+                    "--repo",
+                    self.tmp.name,
+                    "--export",
+                    os.path.join(self.tmp.name, "export.json"),
+                    "--state",
+                    os.path.join(self.tmp.name, "q"),
+                ]
+            )
         self.assertEqual(code, 0)
         args = patched.call_args.args
         self.assertEqual(args[0], self.tmp.name)
@@ -131,15 +149,23 @@ class SliceCommandTests(unittest.TestCase):
 
     def test_slice_execute_flag(self):
         import debt_queue
+
         fake = {"status": "created"}
         with mock.patch.object(debt_queue, "slice_queue", return_value=fake) as patched:
-            code = self._run([
-                "--config", self.config_path, "slice",
-                "--repo", self.tmp.name,
-                "--export", os.path.join(self.tmp.name, "export.json"),
-                "--state", os.path.join(self.tmp.name, "q"),
-                "--execute",
-            ])
+            code = self._run(
+                [
+                    "--config",
+                    self.config_path,
+                    "slice",
+                    "--repo",
+                    self.tmp.name,
+                    "--export",
+                    os.path.join(self.tmp.name, "export.json"),
+                    "--state",
+                    os.path.join(self.tmp.name, "q"),
+                    "--execute",
+                ]
+            )
         self.assertEqual(code, 0)
         self.assertIs(patched.call_args.kwargs.get("execute"), True)
 
@@ -156,16 +182,27 @@ class RunCommandTests(unittest.TestCase):
             return sonar_remedy.main(argv)
 
     def test_run_maps_config_and_bounds(self):
-        import debt_queue, debt_runner
+        import debt_queue
+        import debt_runner
+
         fake_work = mock.MagicMock()
-        with mock.patch.object(debt_queue, "Queue", return_value=fake_work) as qpatched, \
-             mock.patch.object(debt_runner, "run", return_value={"status": "dry-run"}) as rpatched:
-            code = self._run([
-                "--config", self.config_path, "run",
-                "--state", os.path.join(self.tmp.name, "q"),
-                "--repo", self.tmp.name,
-                "--limit", "3",
-            ])
+        with (
+            mock.patch.object(debt_queue, "Queue", return_value=fake_work) as qpatched,
+            mock.patch.object(debt_runner, "run", return_value={"status": "dry-run"}) as rpatched,
+        ):
+            code = self._run(
+                [
+                    "--config",
+                    self.config_path,
+                    "run",
+                    "--state",
+                    os.path.join(self.tmp.name, "q"),
+                    "--repo",
+                    self.tmp.name,
+                    "--limit",
+                    "3",
+                ]
+            )
         self.assertEqual(code, 0)
         self.assertEqual(qpatched.call_args.args[0], os.path.join(self.tmp.name, "q"))
         self.assertEqual(qpatched.call_args.kwargs.get("target"), self.tmp.name)
@@ -176,15 +213,28 @@ class RunCommandTests(unittest.TestCase):
         self.assertEqual(rpatched.call_args.kwargs.get("limit"), 3)
 
     def test_run_passes_flags(self):
-        import debt_queue, debt_runner
+        import debt_queue
+        import debt_runner
+
         fake_work = mock.MagicMock()
-        with mock.patch.object(debt_queue, "Queue", return_value=fake_work), \
-             mock.patch.object(debt_runner, "run", return_value={"status": "proposals_ready"}) as rpatched:
-            code = self._run([
-                "--config", self.config_path, "run",
-                "--state", os.path.join(self.tmp.name, "q"),
-                "--execute", "--resume", "--integrate",
-            ])
+        with (
+            mock.patch.object(debt_queue, "Queue", return_value=fake_work),
+            mock.patch.object(
+                debt_runner, "run", return_value={"status": "proposals_ready"}
+            ) as rpatched,
+        ):
+            code = self._run(
+                [
+                    "--config",
+                    self.config_path,
+                    "run",
+                    "--state",
+                    os.path.join(self.tmp.name, "q"),
+                    "--execute",
+                    "--resume",
+                    "--integrate",
+                ]
+            )
         self.assertEqual(code, 0)
         kwargs = rpatched.call_args.kwargs
         self.assertIs(kwargs.get("execute"), True)
@@ -210,17 +260,30 @@ class ConfigureIntegrateTests(unittest.TestCase):
             return sonar_remedy.main(argv)
 
     def test_configure_maps(self):
-        import debt_queue, debt_executor
+        import debt_executor
+        import debt_queue
+
         fake_work = mock.MagicMock()
-        with mock.patch.object(debt_queue, "Queue", return_value=fake_work), \
-             mock.patch.object(debt_executor, "configure", return_value={"status": "configured"}) as cpatched:
-            code = self._run([
-                "--config", self.config_path, "configure",
-                "--state", os.path.join(self.base, "q"),
-                "--checks", self.checks_path,
-                "--approve-checks-sha256", "abc123",
-                "--execute",
-            ])
+        with (
+            mock.patch.object(debt_queue, "Queue", return_value=fake_work),
+            mock.patch.object(
+                debt_executor, "configure", return_value={"status": "configured"}
+            ) as cpatched,
+        ):
+            code = self._run(
+                [
+                    "--config",
+                    self.config_path,
+                    "configure",
+                    "--state",
+                    os.path.join(self.base, "q"),
+                    "--checks",
+                    self.checks_path,
+                    "--approve-checks-sha256",
+                    "abc123",
+                    "--execute",
+                ]
+            )
         self.assertEqual(code, 0)
         self.assertEqual(cpatched.call_args.args[0], fake_work)
         self.assertEqual(cpatched.call_args.args[1], {})
@@ -228,16 +291,28 @@ class ConfigureIntegrateTests(unittest.TestCase):
         self.assertIs(cpatched.call_args.kwargs.get("execute"), True)
 
     def test_integrate_maps(self):
-        import debt_queue, debt_executor
+        import debt_executor
+        import debt_queue
+
         fake_work = mock.MagicMock()
-        with mock.patch.object(debt_queue, "Queue", return_value=fake_work), \
-             mock.patch.object(debt_executor, "integrate", return_value={"status": "locally_verified"}) as ipatched:
-            code = self._run([
-                "--config", self.config_path, "integrate",
-                "--state", os.path.join(self.base, "q"),
-                "--job", "jsomejobid",
-                "--execute",
-            ])
+        with (
+            mock.patch.object(debt_queue, "Queue", return_value=fake_work),
+            mock.patch.object(
+                debt_executor, "integrate", return_value={"status": "locally_verified"}
+            ) as ipatched,
+        ):
+            code = self._run(
+                [
+                    "--config",
+                    self.config_path,
+                    "integrate",
+                    "--state",
+                    os.path.join(self.base, "q"),
+                    "--job",
+                    "jsomejobid",
+                    "--execute",
+                ]
+            )
         self.assertEqual(code, 0)
         self.assertEqual(ipatched.call_args.args[0], fake_work)
         self.assertEqual(ipatched.call_args.args[1], "jsomejobid")
@@ -271,8 +346,10 @@ class ProjectSelectionTests(unittest.TestCase):
         saved = os.environ.get("SONAR_TOKEN")
         self.addCleanup(lambda: self._restore_token(saved))
         os.environ["SONAR_TOKEN"] = "sqa_TEST"
-        with mock.patch.object(rc, "load_project", return_value=_valid_config()) as lpatched, \
-             mock.patch.object(sonar_fetch, "fetch", return_value={"status": "collected"}):
+        with (
+            mock.patch.object(rc, "load_project", return_value=_valid_config()) as lpatched,
+            mock.patch.object(sonar_fetch, "fetch", return_value={"status": "collected"}),
+        ):
             code = self._run(["--project", "documentos", "fetch", "--repo", self.tmp.name])
         self.assertEqual(code, 0)
         lpatched.assert_called_once_with("documentos")
@@ -294,7 +371,9 @@ class NextActionTests(unittest.TestCase):
         self.assertEqual(sonar_remedy.next_action({"proposed": 2}), "integrate")
 
     def test_re_scan_when_exhausted(self):
-        self.assertEqual(sonar_remedy.next_action({"applied": 5, "deferred": 2}), "re_scan_required")
+        self.assertEqual(
+            sonar_remedy.next_action({"applied": 5, "deferred": 2}), "re_scan_required"
+        )
 
     def test_done_when_empty(self):
         self.assertEqual(sonar_remedy.next_action({}), "done")
@@ -303,12 +382,21 @@ class NextActionTests(unittest.TestCase):
 class StatusCommandTests(unittest.TestCase):
     def test_status_reports_re_scan(self):
         import debt_queue
+
         fake_work = mock.MagicMock()
-        fake_work.monitor.return_value = {"entry_states": {
-            "pending": 0, "leased": 0, "proposed": 0,
-            "applied": 2, "locally_verified": 0, "deferred": 1, "failed": 0,
-            "sonar_confirmed": 0, "unavailable": 0,
-        }}
+        fake_work.monitor.return_value = {
+            "entry_states": {
+                "pending": 0,
+                "leased": 0,
+                "proposed": 0,
+                "applied": 2,
+                "locally_verified": 0,
+                "deferred": 1,
+                "failed": 0,
+                "sonar_confirmed": 0,
+                "unavailable": 0,
+            }
+        }
         buf = io.StringIO()
         with mock.patch.object(debt_queue, "Queue", return_value=fake_work):
             with contextlib.redirect_stdout(buf):
@@ -353,23 +441,48 @@ class AnalyzeCommandTests(unittest.TestCase):
         os.environ["SONAR_TOKEN"] = "sqa_TEST"
         buf = io.StringIO()
         with contextlib.redirect_stdout(buf):
-            code = sonar_remedy.main(["--config", self.config_path, "analyze",
-                                    "--script", "C:/pipeline.ps1", "--repo", self.tmp.name])
+            code = sonar_remedy.main(
+                [
+                    "--config",
+                    self.config_path,
+                    "analyze",
+                    "--script",
+                    "C:/pipeline.ps1",
+                    "--repo",
+                    self.tmp.name,
+                ]
+            )
         self.assertEqual(code, 0)
         self.assertIn('"dry-run"', buf.getvalue())
 
     def test_analyze_blocks_when_token_missing(self):
         os.environ.pop("SONAR_TOKEN", None)
         with contextlib.redirect_stdout(io.StringIO()):
-            code = sonar_remedy.main(["--config", self.config_path, "analyze",
-                                    "--script", "C:/pipeline.ps1", "--repo", self.tmp.name])
+            code = sonar_remedy.main(
+                [
+                    "--config",
+                    self.config_path,
+                    "analyze",
+                    "--script",
+                    "C:/pipeline.ps1",
+                    "--repo",
+                    self.tmp.name,
+                ]
+            )
         self.assertEqual(code, 2)
 
 
 class EstimateTests(unittest.TestCase):
     def test_remaining_and_eta(self):
-        states = {"pending": 10, "leased": 2, "proposed": 3, "applied": 20,
-                  "locally_verified": 5, "deferred": 4, "failed": 1}
+        states = {
+            "pending": 10,
+            "leased": 2,
+            "proposed": 3,
+            "applied": 20,
+            "locally_verified": 5,
+            "deferred": 4,
+            "failed": 1,
+        }
         est = sonar_remedy.estimate(states, minutes_per_job=10)
         self.assertEqual(est["remaining_jobs"], 15)
         self.assertEqual(est["resolved_jobs"], 30)
@@ -386,12 +499,20 @@ class EstimateTests(unittest.TestCase):
 class ProgressCommandTests(unittest.TestCase):
     def test_progress_writes_file(self):
         import debt_queue
+
         with tempfile.TemporaryDirectory() as d:
             fake_work = mock.MagicMock()
-            fake_work.monitor.return_value = {"entry_states": {
-                "pending": 4, "leased": 0, "proposed": 0, "applied": 0,
-                "locally_verified": 0, "deferred": 0, "failed": 0,
-            }}
+            fake_work.monitor.return_value = {
+                "entry_states": {
+                    "pending": 4,
+                    "leased": 0,
+                    "proposed": 0,
+                    "applied": 0,
+                    "locally_verified": 0,
+                    "deferred": 0,
+                    "failed": 0,
+                }
+            }
             with mock.patch.object(debt_queue, "Queue", return_value=fake_work):
                 with contextlib.redirect_stdout(io.StringIO()):
                     code = sonar_remedy.main(["progress", "--state", os.path.join(d, "q")])
@@ -402,10 +523,34 @@ class ProgressCommandTests(unittest.TestCase):
 class SchedulePlanTests(unittest.TestCase):
     def test_groups_and_classifies(self):
         jobs = [
-            {"job_id": "j1", "path": "a.py", "kind": "coverage", "write_paths": ["a.py"], "issue_count": 1},
-            {"job_id": "j2", "path": "b.py", "kind": "smells", "write_paths": ["b.py"], "issue_count": 1},
-            {"job_id": "j3", "path": "b.py", "kind": "smells", "write_paths": ["b.py"], "issue_count": 1},
-            {"job_id": "j4", "path": "c.py", "kind": "coverage", "write_paths": ["c.py"], "issue_count": 1},
+            {
+                "job_id": "j1",
+                "path": "a.py",
+                "kind": "coverage",
+                "write_paths": ["a.py"],
+                "issue_count": 1,
+            },
+            {
+                "job_id": "j2",
+                "path": "b.py",
+                "kind": "smells",
+                "write_paths": ["b.py"],
+                "issue_count": 1,
+            },
+            {
+                "job_id": "j3",
+                "path": "b.py",
+                "kind": "smells",
+                "write_paths": ["b.py"],
+                "issue_count": 1,
+            },
+            {
+                "job_id": "j4",
+                "path": "c.py",
+                "kind": "coverage",
+                "write_paths": ["c.py"],
+                "issue_count": 1,
+            },
         ]
         plan = sonar_remedy.schedule_plan(jobs)
         self.assertEqual(plan["jobs"], 4)
@@ -424,9 +569,16 @@ class SchedulePlanTests(unittest.TestCase):
 class ScheduleCommandTests(unittest.TestCase):
     def test_schedule_reports_plan(self):
         import debt_queue
+
         fake_work = mock.MagicMock()
         fake_work.pending.return_value = [
-            {"job_id": "j1", "path": "a.py", "kind": "coverage", "write_paths": ["a.py"], "issue_count": 1},
+            {
+                "job_id": "j1",
+                "path": "a.py",
+                "kind": "coverage",
+                "write_paths": ["a.py"],
+                "issue_count": 1,
+            },
         ]
         buf = io.StringIO()
         with mock.patch.object(debt_queue, "Queue", return_value=fake_work):
@@ -468,17 +620,35 @@ class RunAllCommandTests(unittest.TestCase):
 
     def test_run_all_slices_each_chunk(self):
         import debt_queue
+
         os.environ["SONAR_TOKEN"] = "sqa_TEST"
-        fake = {"status": "collected", "export": "x/export.json",
-                "exports": ["x/chunk-0.json", "x/chunk-1.json"], "chunks": 2,
-                "issues_total": 4000, "gate": "ERROR"}
-        with mock.patch.object(sonar_fetch, "fetch", return_value=fake), \
-             mock.patch.object(debt_queue, "slice_queue", return_value={"status": "created"}) as spatched:
-            with contextlib.redirect_stdout(io.StringIO()):
-                code = sonar_remedy.main(["--config", self.config_path, "run-all",
-                                        "--repo", self.tmp.name,
-                                        "--state", os.path.join(self.tmp.name, "q"),
-                                        "--execute"])
+        fake = {
+            "status": "collected",
+            "export": "x/export.json",
+            "exports": ["x/chunk-0.json", "x/chunk-1.json"],
+            "chunks": 2,
+            "issues_total": 4000,
+            "gate": "ERROR",
+        }
+        with (
+            mock.patch.object(sonar_fetch, "fetch", return_value=fake),
+            mock.patch.object(
+                debt_queue, "slice_queue", return_value={"status": "created"}
+            ) as spatched,
+            contextlib.redirect_stdout(io.StringIO()),
+        ):
+            code = sonar_remedy.main(
+                [
+                    "--config",
+                    self.config_path,
+                    "run-all",
+                    "--repo",
+                    self.tmp.name,
+                    "--state",
+                    os.path.join(self.tmp.name, "q"),
+                    "--execute",
+                ]
+            )
         self.assertEqual(code, 0)
         self.assertEqual(spatched.call_count, 2)
         states = {call.args[2] for call in spatched.call_args_list}
@@ -487,9 +657,17 @@ class RunAllCommandTests(unittest.TestCase):
     def test_run_all_blocks_when_token_missing(self):
         os.environ.pop("SONAR_TOKEN", None)
         with contextlib.redirect_stdout(io.StringIO()):
-            code = sonar_remedy.main(["--config", self.config_path, "run-all",
-                                    "--repo", self.tmp.name,
-                                    "--state", os.path.join(self.tmp.name, "q")])
+            code = sonar_remedy.main(
+                [
+                    "--config",
+                    self.config_path,
+                    "run-all",
+                    "--repo",
+                    self.tmp.name,
+                    "--state",
+                    os.path.join(self.tmp.name, "q"),
+                ]
+            )
         self.assertEqual(code, 2)
 
 
@@ -497,13 +675,26 @@ class ConfigureProjectCommandTests(unittest.TestCase):
     def test_configure_project_saves_config(self):
         with mock.patch.object(rc, "save_project") as spatched:
             with contextlib.redirect_stdout(io.StringIO()):
-                code = sonar_remedy.main([
-                    "configure-project", "--name", "mem",
-                    "--sonar-url", "http://h:9000", "--project-key", "PK",
-                    "--repo-url", "https://github.com/o/r", "--local-path", "C:/r",
-                    "--worktree-root", "C:/wt", "--main-branch", "feature/Sonar",
-                    "--allow-http",
-                ])
+                code = sonar_remedy.main(
+                    [
+                        "configure-project",
+                        "--name",
+                        "mem",
+                        "--sonar-url",
+                        "http://h:9000",
+                        "--project-key",
+                        "PK",
+                        "--repo-url",
+                        "https://github.com/o/r",
+                        "--local-path",
+                        "C:/r",
+                        "--worktree-root",
+                        "C:/wt",
+                        "--main-branch",
+                        "feature/Sonar",
+                        "--allow-http",
+                    ]
+                )
         self.assertEqual(code, 0)
         self.assertEqual(spatched.call_args.args[0], "mem")
         cfg = spatched.call_args.args[1]
@@ -515,13 +706,23 @@ class ConfigureProjectCommandTests(unittest.TestCase):
     def test_configure_project_detects_branch_from_url(self):
         with mock.patch.object(rc, "save_project") as spatched:
             with contextlib.redirect_stdout(io.StringIO()):
-                code = sonar_remedy.main([
-                    "configure-project", "--name", "mem",
-                    "--sonar-url", "https://h/dashboard?id=PK&branch=feature/Sonar",
-                    "--project-key", "PK",
-                    "--repo-url", "https://github.com/o/r", "--local-path", "C:/r",
-                    "--worktree-root", "C:/wt",
-                ])
+                code = sonar_remedy.main(
+                    [
+                        "configure-project",
+                        "--name",
+                        "mem",
+                        "--sonar-url",
+                        "https://h/dashboard?id=PK&branch=feature/Sonar",
+                        "--project-key",
+                        "PK",
+                        "--repo-url",
+                        "https://github.com/o/r",
+                        "--local-path",
+                        "C:/r",
+                        "--worktree-root",
+                        "C:/wt",
+                    ]
+                )
         self.assertEqual(code, 0)
         cfg = spatched.call_args.args[1]
         self.assertEqual(cfg["repository"]["main_branch"], "feature/Sonar")
