@@ -42,6 +42,43 @@ python -m pip install -e .
 4. **Integrate** — a single serial integrator applies proposals, runs configured checks (RED/GREEN), and verifies byte-for-byte.
 5. **Track** — `status`/`progress` report the next action, remaining jobs, and an ETA.
 
+## Architecture
+
+**Python does all the mechanical analysis; the AI does exactly one thing — propose the fix.**
+
+| Layer | Modules | Role |
+|---|---|---|
+| Fetch | `sonar_fetch.py`, `sonar_client.py` | Pull Sonar issues (chunked if over budget) |
+| Queue | `debt_queue.py` | Durable SQLite queue — claims, leases, fail-closed binding |
+| Detect | `sonar_suppressions.py`, `sonar_exclusions.py`, `language_for`/`hint_for` | Find suppressions; detect language + distilled hints |
+| Integrate | `debt_executor.py`, `debt_runner.py` | Apply proposals serially, run checks, verify byte-for-byte |
+| Report | `status`/`progress`/`schedule` | Next action, ETA, parallel/serial plan |
+| **AI (external)** | proposal worker | Reads one `job.json` → returns one `proposal.json` |
+
+Everything that does not need AI is mechanical (zero tokens). The AI only proposes
+what the mechanical tools cannot: understanding the code and writing an idiomatic fix.
+
+## Commands
+
+`sonarremedy <command> [flags]`
+
+| Command | What it does |
+|---|---|
+| `fetch` | Pull Sonar issues into an export (chunked if over budget) |
+| `slice` | Build a durable queue from an export |
+| `run` | Lease/process a bounded manual proposal batch |
+| `integrate` | Serially apply a recorded proposal + run bound checks |
+| `configure` | Bind reviewed check commands + the target snapshot |
+| `scan-suppressions` | Detect Sonar-evasion directives (`certain` vs `ambiguous`) |
+| `status` | Report the queue's next action + ETA |
+| `progress` | Write a human-readable progress file |
+| `schedule` | Show the parallel/serial plan for pending jobs |
+| `analyze` | Run the local pipeline to regenerate Sonar results |
+| `run-all` | Fetch + slice every chunk into its own queue |
+| `projects` | List saved project configs |
+| `configure-project` | Save a project config non-interactively |
+| `init` | Wire up VS Code + Copilot (`.vscode/mcp.json` + instructions) |
+
 ## Quick start
 
 ```powershell
