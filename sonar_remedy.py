@@ -319,6 +319,10 @@ def main(argv: list[str] | None = None) -> int:
         "scan-suppressions", help="detect code-level suppressions that may evade Sonar"
     )
     supp_cmd.add_argument("--repo", help="local checkout (overrides repository.local_path)")
+    report_cmd = commands.add_parser(
+        "report", help="list applied fixes and the human follow-up each requires"
+    )
+    report_cmd.add_argument("--state", required=True, help="the queue directory created by slice")
     args = parser.parse_args(argv)
     try:
         if args.command == "projects":
@@ -376,6 +380,12 @@ def main(argv: list[str] | None = None) -> int:
             work = debt_queue.Queue(args.state)
             plan = schedule_plan(work.pending())
             print(json.dumps({"status": "ok", **plan}, sort_keys=True))
+            return 0
+        if args.command == "report":
+            import debt_queue
+
+            work = debt_queue.Queue(args.state)
+            print(json.dumps(work.report(), sort_keys=True))
             return 0
         if args.command == "configure-project":
             branch = args.main_branch or rc.detect_branch(args.sonar_url) or "main"

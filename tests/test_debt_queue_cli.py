@@ -187,6 +187,7 @@ class RunnerTests(QueueFixture):
             "status": "proposed",
             "reason": "",
             "risks": [],
+            "follow_up": [],
             "test_plan": "Characterization fixture only; no model runs tests.",
             "edits": [
                 {

@@ -70,7 +70,7 @@ class ExecutorTests(QueueFixture):
         )
         self.assertEqual(result["status"], "configured")
 
-    def proposed(self, version=2):
+    def proposed(self, version=2, follow_up=None):
         receipt = self.leased()
         proposal = self.proposal(receipt)
         if version == 2:
@@ -84,6 +84,8 @@ class ExecutorTests(QueueFixture):
                     "replacements": [{"old": "expected=1", "new": "expected=3"}],
                 }
             )
+        if follow_up is not None:
+            proposal["follow_up"] = follow_up
         self.queue().complete(proposal, execute=True, now=101)
         return receipt["job_id"]
 
@@ -148,6 +150,24 @@ class ExecutorTests(QueueFixture):
         )
         self.assertEqual(len(self.calls), 8)
         self.assertEqual(before, self.files())
+
+    def test_report_surfaces_follow_up(self):
+        self.configure()
+        job = self.proposed(
+            follow_up=[
+                {"action": "set_env_var", "name": "DB_PASSWORD", "note": "set it in the pipeline"}
+            ]
+        )
+        e.integrate(
+            self.queue(), job, execute=True, control_root=self.control, process_runner=self.runner
+        )
+        report = self.queue().report()
+        self.assertEqual(report["status"], "ok")
+        self.assertEqual(report["applied_count"], 1)
+        self.assertEqual(len(report["follow_up_required"]), 1)
+        follow_up = report["follow_up_required"][0]["follow_up"][0]
+        self.assertEqual(follow_up["action"], "set_env_var")
+        self.assertEqual(follow_up["name"], "DB_PASSWORD")
 
     def test_characterization_is_explicit_and_v1_without_policy_cannot_apply(self):
         self.configure()

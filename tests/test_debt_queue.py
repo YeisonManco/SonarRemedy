@@ -82,6 +82,7 @@ class QueueFixture(unittest.TestCase):
             ],
             "reason": "",
             "risks": [],
+            "follow_up": [],
             "test_plan": "Add a regression test; no tests executed by this proposal.",
         }
 
@@ -235,6 +236,23 @@ class LifecycleTests(QueueFixture):
         proposal = self.proposal(receipt)
         proposal["edits"][0]["replacements"] = [{"old": "// line 1\n", "new": "// changed\n"}]
         with self.assertRaisesRegex(q.Blocked, "retained_context"):
+            self.queue().complete(proposal, execute=True, now=101)
+
+    def test_follow_up_schema_is_validated(self):
+        self.create()
+        receipt = self.leased()
+        proposal = self.proposal(receipt)
+        proposal["follow_up"] = [
+            {"action": "set_env_var", "name": "DB_PASSWORD", "note": "set it in the pipeline"}
+        ]
+        self.queue().complete(proposal, execute=True, now=101)
+
+    def test_invalid_follow_up_is_rejected(self):
+        self.create()
+        receipt = self.leased()
+        proposal = self.proposal(receipt)
+        proposal["follow_up"] = [{"action": "set env var", "name": "DB_PASSWORD", "note": "x"}]
+        with self.assertRaisesRegex(q.Blocked, "invalid_proposal_schema"):
             self.queue().complete(proposal, execute=True, now=101)
 
     def test_sqlite_connection_failure_is_a_bounded_blocked_outcome(self):

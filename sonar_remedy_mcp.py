@@ -178,6 +178,15 @@ TOOLS = [
             },
         },
     },
+    {
+        "name": "sonar_remedy_report",
+        "description": "List applied fixes and the human follow-up each requires.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {"state": {"type": "string"}},
+            "required": ["state"],
+        },
+    },
 ]
 
 
@@ -276,6 +285,8 @@ def build_argv(name: str, arguments: dict[str, Any] | None) -> list[str]:
         )
     if name == "sonar_remedy_scan_suppressions":
         return g + ["scan-suppressions"] + _opt("--repo", a.get("repo"))
+    if name == "sonar_remedy_report":
+        return g + ["report", "--state", a["state"]]
     raise ValueError(f"unknown tool: {name}")
 
 

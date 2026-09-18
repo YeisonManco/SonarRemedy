@@ -52,9 +52,10 @@ When the user says "recuperá la deuda del proyecto X" (or similar):
    (`skills/sonar/sonar-fix-issue/SKILL.md`) yourself, then inject their DISTILLED
    guidance into the worker prompt — never dump the full skills. Write each proposal
    to its inbox `proposal_path`. The worker never touches the target repo.
-   Proposal v1 shape: `status` "proposed", `edits=[{path, before_sha256,
-   replacements:[{old,new}]}]`, `reason` matches `^[A-Za-z0-9_.-]{1,128}$`
-   (no spaces), plus `risks` and `test_plan`.
+    Proposal v1 shape: `status` "proposed", `edits=[{path, before_sha256,
+    replacements:[{old,new}]}]`, `reason` matches `^[A-Za-z0-9_.-]{1,128}$`
+    (no spaces), plus `risks`, `test_plan`, and `follow_up` (a list of
+    `{action, name, note}` for human actions the fix requires, `[]` when none).
 
 4. **Consume and report**: `sonar_remedy.py run --state <q> --resume --execute`,
    then `sonar_remedy.py status --state <q>` for the next action.

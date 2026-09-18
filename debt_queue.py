@@ -838,6 +838,7 @@ class Queue:
             "reason",
             "risks",
             "test_plan",
+            "follow_up",
         }
         if (
             set(proposal) != fields
@@ -853,6 +854,19 @@ class Queue:
             or any(not isinstance(r, str) or len(r) > 1000 for r in proposal["risks"])
             or not isinstance(proposal["test_plan"], str)
             or not 1 <= len(proposal["test_plan"]) <= 4000
+            or not isinstance(proposal["follow_up"], list)
+            or len(proposal["follow_up"]) > 4
+            or any(
+                not isinstance(f, dict)
+                or set(f) != {"action", "name", "note"}
+                or not isinstance(f["action"], str)
+                or not TOKEN.fullmatch(f["action"])
+                or not isinstance(f["name"], str)
+                or not 1 <= len(f["name"]) <= 128
+                or not isinstance(f["note"], str)
+                or not 1 <= len(f["note"]) <= 500
+                for f in proposal["follow_up"]
+            )
         ):
             raise Blocked("invalid_proposal_schema")
         if proposal["status"] != "proposed":
@@ -1122,4 +1136,43 @@ class Queue:
             return {
                 "status": "documented",
                 "files": {name: digest(data) for name, data in outputs.items()},
+            }
+
+    def report(self, *, timeout: int = 10) -> dict[str, Any]:
+        """Read-only: list applied fixes and the human follow-up each requires."""
+        with self._open(timeout=timeout) as (connection, binding):
+            applied = []
+            for attempt in connection.execute(
+                "SELECT * FROM attempts WHERE status IN ('applied','locally_verified') "
+                "ORDER BY job_id, number"
+            ):
+                result = parse_json(
+                    read_bytes(self._attempt_folder(attempt) / "result.json", 2 * MAX_RESULT)
+                )
+                follow_up = result.get("proposal", {}).get("follow_up", [])
+                job_row = connection.execute(
+                    "SELECT kind, data FROM jobs WHERE id=?", (attempt["job_id"],)
+                ).fetchone()
+                job = dict(parse_json(job_row[1]))
+                applied.append(
+                    {
+                        "job_id": attempt["job_id"],
+                        "kind": job_row[0],
+                        "path": job.get("path", ""),
+                        "status": attempt["status"],
+                        "follow_up": follow_up,
+                    }
+                )
+            with_follow_up = [item for item in applied if item["follow_up"]]
+            return {
+                "status": "ok",
+                "binding": binding,
+                "applied_count": len(applied),
+                "applied": applied,
+                "follow_up_required": with_follow_up,
+                "notice": (
+                    f"{len(with_follow_up)} applied fix(es) require human follow-up"
+                    if with_follow_up
+                    else "no human follow-up required"
+                ),
             }

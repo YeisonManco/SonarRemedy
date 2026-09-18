@@ -42,6 +42,7 @@ proposal = {
     "status": "proposed",
     "reason": "",
     "risks": [],
+    "follow_up": [],
     "test_plan": "Synthetic fixture; configured characterization checks remain external.",
     "edits": [
         {

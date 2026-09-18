@@ -42,6 +42,7 @@ def _invalid_result(receipt: dict[str, Any]) -> dict[str, Any]:
         edits=[],
         reason="invalid_manual_proposal",
         risks=[],
+        follow_up=[],
         test_plan="No behavioral proof; the script rejected the supplied proposal.",
     )
 

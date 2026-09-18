@@ -10,7 +10,9 @@ Preserve observable behavior and all existing bytes outside approved replacement
 
 ## Output
 
-Return one JSON object, no prose/fences: `version`, `job_id`, `attempt_id`, `lease`, `context_fingerprint`, `status`, `edits`, `reason`, `risks`, `test_plan`. Copy identity exactly from the job. Status is only `proposed`, `deferred`, or `failed`; nonproposals have no edits and a short reason code.
+Return one JSON object, no prose/fences: `version`, `job_id`, `attempt_id`, `lease`, `context_fingerprint`, `status`, `edits`, `reason`, `risks`, `test_plan`, `follow_up`. Copy identity exactly from the job. Status is only `proposed`, `deferred`, or `failed`; nonproposals have no edits and a short reason code.
+
+`follow_up` is a list (max 4) of `{action, name, note}` for human actions your fix requires — e.g. `{"action": "set_env_var", "name": "DB_PASSWORD", "note": "set it in the pipeline; the hardcoded value was removed"}`. Use `[]` when none. You only DECLARE the follow-up; you never perform it.
 
 Use version 2 for red-first work. Each edit includes `path`, `before_sha256`, `phase` (`test` or `implementation`) and `replacements` containing exact nonempty uniquely matched `old` and replacement `new` text. Each path appears once and belongs to the complete approved write set. Existing approved test paths only; do not invent/create files. Version 1 remains compatible for separately owner-approved characterization work; you cannot grant that policy exception yourself.
 

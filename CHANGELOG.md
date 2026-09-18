@@ -2,6 +2,13 @@
 
 All notable changes to SonarRemedy are documented here.
 
+## [0.2.2] - 2026-09-18
+
+### Added
+
+- **`follow_up` in proposals** — workers declare the human actions a fix requires (e.g. `set_env_var`), persisted and surfaced so the operator knows what to configure (pipeline secrets, packages, CI).
+- **`report` command** (`sonar_remedy_report`) — lists applied fixes and the follow-up each requires.
+
 ## [0.2.1] - 2026-09-18
 
 ### Added
