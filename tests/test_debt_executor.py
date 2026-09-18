@@ -1,0 +1,250 @@
+"""Isolated target fixtures; synthetic TRX is not live .NET/Sonar evidence."""
+from contextlib import closing
+import hashlib
+import json
+import os
+from pathlib import Path
+import sqlite3
+import sys
+import time
+import unittest
+from unittest.mock import patch
+
+import debt_executor as e
+import debt_queue as q
+from test_debt_queue import QueueFixture
+
+
+def trx(passed=1, failed=0, skipped=0, message='Assert.Equal() Failure', name='Behavior.Value'):
+    outcome = 'Failed' if failed else 'Completed'
+    result = 'Failed' if failed else 'NotExecuted' if skipped else 'Passed'
+    return (f'<TestRun><Results><UnitTestResult testName="{name}" outcome="{result}">'
+            f'<Output><ErrorInfo><Message>{message}</Message></ErrorInfo></Output></UnitTestResult></Results>'
+            f'<ResultSummary outcome="{outcome}"><Counters total="{passed+failed+skipped}" executed="{passed+failed}" '
+            f'passed="{passed}" failed="{failed}" notExecuted="{skipped}"/></ResultSummary></TestRun>')
+
+
+class ExecutorTests(QueueFixture):
+    def setUp(self):
+        super().setUp()
+        (self.target / 'tests.cs').write_text('expected=1\n')
+        self.create(write_sets={'a.cs': ['a.cs', 'tests.cs']})
+        self.control = self.home / 'control'
+        self.calls = []
+        exe_sha = hashlib.sha256(Path(sys.executable).read_bytes()).hexdigest()
+        self.config = dict(version=1, target=str(self.target), branch='feature/queue', policy='red-first',
+                           characterization_reason='', test_paths=['tests.cs'],
+                           expected_red={'Behavior.Value': 'Assert.Equal() Failure'}, allowed_outputs=[],
+                           checks=[dict(name='build', kind='build', argv=[sys.executable, '-B', '-c', 'pass'],
+                                        executable_sha256=exe_sha, cwd='.', timeout_seconds=10),
+                                   dict(name='tests', kind='trx', argv=[sys.executable, '-B', '-c', 'pass', '{run}'],
+                                        executable_sha256=exe_sha, cwd='.', timeout_seconds=10, report='tests.trx')])
+
+    def configure(self):
+        result = e.configure(self.queue(), self.config, approved_sha256=q.digest(q.encoded(self.config)), execute=True)
+        self.assertEqual(result['status'], 'configured')
+
+    def proposed(self, version=2):
+        receipt = self.leased()
+        proposal = self.proposal(receipt)
+        if version == 2:
+            proposal['version'] = 2
+            proposal['edits'][0]['phase'] = 'implementation'
+            proposal['edits'].append(dict(path='tests.cs', before_sha256=q.digest((self.target / 'tests.cs').read_bytes()),
+                                          phase='test', replacements=[dict(old='expected=1', new='expected=3')]))
+        self.queue().complete(proposal, execute=True, now=101)
+        return receipt['job_id']
+
+    def runner(self, argv, cwd, **kwargs):
+        self.calls.append(argv)
+        if argv[-1] == 'pass':
+            return dict(status='exited', exit_code=0, reason='', stdout=b'')
+        report = Path(argv[-1]) / 'tests.trx'
+        expected = int((self.target / 'tests.cs').read_text().split('=')[1])
+        actual = 3 if '=> 3' in (self.target / 'a.cs').read_text() else 1
+        failed = int(expected != actual)
+        report.write_text(trx(passed=1-failed, failed=failed), encoding='utf-8')
+        return dict(status='exited', exit_code=failed, reason='', stdout=b'')
+
+    def test_configuration_requires_explicit_reviewed_hash(self):
+        with self.assertRaises(q.Blocked):
+            e.configure(self.queue(), self.config, approved_sha256='0'*64, execute=True)
+
+    def test_dry_run_does_not_touch_target_state_or_process(self):
+        before = self.files()
+        self.assertEqual(e.integrate(self.queue(), 'unused', execute=False)['status'], 'dry-run')
+        self.assertEqual(before, self.files())
+
+    def test_version_two_test_and_implementation_proposal_is_supported(self):
+        receipt = self.leased()
+        proposal = self.proposal(receipt)
+        proposal['version'] = 2
+        proposal['edits'][0]['phase'] = 'implementation'
+        caught = None
+        try:
+            result = self.queue().complete(proposal, execute=True, now=101)
+        except q.Blocked as error:
+            caught = error
+            result = None
+        self.assertIsNone(caught, 'v2 phases must be validated rather than rejected as an unknown version')
+        self.assertEqual(result['status'], 'proposed')
+
+    def test_red_green_post_checks_are_serial_and_status_only_locally_verified(self):
+        self.configure()
+        job = self.proposed()
+        outcome = e.integrate(self.queue(), job, execute=True, control_root=self.control, process_runner=self.runner)
+        self.assertEqual(outcome['status'], 'locally_verified')
+        self.assertEqual(len(self.calls), 8)
+        self.assertIn('=> 3', (self.target / 'a.cs').read_text())
+        progress = self.queue().monitor()
+        self.assertEqual(progress['states']['locally_verified'], 1)
+        self.assertEqual(progress['states']['sonar_confirmed'], 0)
+        before = self.files()
+        self.assertEqual(e.integrate(self.queue(), job, execute=True, control_root=self.control,
+                                     process_runner=self.runner)['status'], 'already_locally_verified')
+        self.assertEqual(len(self.calls), 8)
+        self.assertEqual(before, self.files())
+
+    def test_characterization_is_explicit_and_v1_without_policy_cannot_apply(self):
+        self.configure()
+        job = self.proposed(version=1)
+        self.assertEqual(e.integrate(self.queue(), job, execute=True, control_root=self.control,
+                                     process_runner=self.runner)['status'], 'deferred')
+        self.assertIn('=> 1', (self.target / 'a.cs').read_text())
+
+    def test_stale_full_snapshot_blocks_even_when_job_source_is_unchanged(self):
+        self.configure()
+        job = self.proposed()
+        (self.target / 'b.cs').write_text('owner change\n')
+        with self.assertRaises(q.Blocked):
+            e.integrate(self.queue(), job, execute=True, control_root=self.control, process_runner=self.runner)
+        self.assertEqual(self.calls, [])
+
+    def test_failed_integrated_check_quarantines_and_preserves_preimages(self):
+        self.configure()
+        job = self.proposed()
+        def fail_green(argv, cwd, **kwargs):
+            result = self.runner(argv, cwd, **kwargs)
+            if len(self.calls) == 5:
+                result['exit_code'] = 1
+            return result
+        result = e.integrate(self.queue(), job, execute=True, control_root=self.control, process_runner=fail_green)
+        self.assertEqual(result['status'], 'quarantined')
+        self.assertTrue(self.queue().monitor()['quarantined'])
+        self.assertTrue(list(self.state.rglob('*.preimage')))
+        self.assertIn('=> 3', (self.target / 'a.cs').read_text(), 'no guessed rollback is permitted')
+
+    def test_unexpected_check_write_quarantines_before_any_patch(self):
+        self.configure()
+        job = self.proposed()
+        def contamination(argv, cwd, **kwargs):
+            (self.target / 'outside.cs').write_text('unexpected\n')
+            return self.runner(argv, cwd, **kwargs)
+        result = e.integrate(self.queue(), job, execute=True, control_root=self.control, process_runner=contamination)
+        self.assertEqual(result['status'], 'quarantined')
+        self.assertIn('=> 1', (self.target / 'a.cs').read_text())
+
+    def test_wrong_red_provenance_quarantines_not_green_acceptance(self):
+        self.configure()
+        job = self.proposed()
+        def wrong_red(argv, cwd, **kwargs):
+            result = self.runner(argv, cwd, **kwargs)
+            if result['exit_code'] == 1:
+                (Path(argv[-1]) / 'tests.trx').write_text(trx(passed=0, failed=1, message='compiler infrastructure failed'))
+            return result
+        result = e.integrate(self.queue(), job, execute=True, control_root=self.control, process_runner=wrong_red)
+        self.assertEqual(result['status'], 'quarantined')
+        self.assertIn('=> 1', (self.target / 'a.cs').read_text())
+
+    def test_trx_missing_zero_skipped_stale_nonzero_exit_and_wrong_failure_rejected(self):
+        report = self.home / 'test.trx'
+        for text, exit_code in [(trx(passed=0), 0), (trx(passed=0, skipped=1), 0),
+                                (trx(), 1), (trx(passed=0, failed=1), 0)]:
+            report.write_text(text)
+            with self.subTest(text=text, exit_code=exit_code), self.assertRaises(q.Blocked):
+                e.parse_trx(report, 0, exit_code)
+        report.write_text(trx())
+        with self.assertRaises(q.Blocked):
+            e.parse_trx(report, time.time_ns()+10**9, 0)
+
+    def test_trx_green_and_exact_expected_red(self):
+        report = self.home / 'test.trx'
+        report.write_text(trx())
+        self.assertIsNotNone(e.parse_trx(report, 0, 0))
+        report.write_text(trx(passed=0, failed=1))
+        self.assertIsNotNone(e.parse_trx(report, 0, 1, {'Behavior.Value': 'Assert.Equal() Failure'}))
+
+    def test_retained_verification_cannot_disappear_without_blocking(self):
+        self.configure()
+        job = self.proposed()
+        result = e.integrate(self.queue(), job, execute=True, control_root=self.control, process_runner=self.runner)
+        Path(result['evidence']).unlink()
+        with self.assertRaises(q.Blocked):
+            self.queue().monitor()
+
+    def test_branch_change_during_baseline_is_contamination(self):
+        self.configure()
+        job = self.proposed()
+        identity = self.identity
+        changed = [False]
+        def reader(root):
+            return dict(identity(root), branch='other' if changed[0] else 'feature/queue')
+        def mutate(argv, cwd, **kwargs):
+            changed[0] = True
+            return self.runner(argv, cwd, **kwargs)
+        work = q.Queue(self.state, identity_reader=reader)
+        result = e.integrate(work, job, execute=True, control_root=self.control, process_runner=mutate)
+        self.assertEqual(result['status'], 'quarantined')
+
+    def test_trx_future_timestamp_is_not_fresh_evidence(self):
+        report = self.home / 'future.trx'
+        report.write_text(trx())
+        os.utime(report, (time.time()+3600, time.time()+3600))
+        with self.assertRaises(q.Blocked):
+            e.parse_trx(report, 0, 0)
+
+    def test_shared_barrier_survives_interruption_and_is_not_queue_local(self):
+        with e.TargetBarrier(self.target, self.control) as barrier:
+            barrier.activate({'queue': str(self.state)})
+            with self.assertRaises(q.Blocked):
+                with e.TargetBarrier(self.target, self.control):
+                    self.fail('same target acquired twice')
+        with self.assertRaises(q.Blocked):
+            with e.TargetBarrier(self.target, self.control):
+                self.fail('interrupted barrier must survive process ownership release')
+
+    def test_characterization_policy_executes_without_fabricated_red(self):
+        self.config.update(policy='characterization', characterization_reason='Approved behavior-preserving fixture refactor.',
+                           expected_red={}, test_paths=[])
+        self.configure()
+        receipt = self.leased()
+        proposal = self.proposal(receipt)
+        proposal['edits'][0]['replacements'] = [dict(old='Value()', new='Value( )')]
+        self.queue().complete(proposal, execute=True, now=101)
+        result = e.integrate(self.queue(), receipt['job_id'], execute=True, control_root=self.control, process_runner=self.runner)
+        self.assertEqual(result['status'], 'locally_verified')
+        self.assertEqual(len(self.calls), 6)
+        self.assertFalse(any(p.name == 'red.json' for p in self.state.rglob('*.json')))
+
+    def test_executor_preserves_bom_and_crlf_bytes(self):
+        self.state = self.home / 'bom-queue'
+        (self.target / 'a.cs').write_bytes(b'\xef\xbb\xbfclass A { int Value() => 1; }\r\n')
+        (self.target / 'tests.cs').write_bytes(b'expected=1\r\n')
+        self.create(write_sets={'a.cs': ['a.cs', 'tests.cs']})
+        self.configure()
+        result = e.integrate(self.queue(), self.proposed(), execute=True, control_root=self.control, process_runner=self.runner)
+        self.assertEqual(result['status'], 'locally_verified')
+        self.assertEqual((self.target / 'a.cs').read_bytes(), b'\xef\xbb\xbfclass A { int Value() => 3; }\r\n')
+
+    def test_real_contained_check_children_execute_red_green(self):
+        template = trx(passed=0, failed=1)
+        code = ('import pathlib,re,sys; root=pathlib.Path(sys.argv[1]); '
+                'expected=int((root/"tests.cs").read_text().split("=")[1]); '
+                'actual=int(re.search(r"=> (\d+)",(root/"a.cs").read_text()).group(1)); '
+                'failed=int(expected!=actual); '
+                f'pathlib.Path(sys.argv[2]).write_text({template!r} if failed else {trx()!r}); '
+                'sys.exit(failed)')
+        self.config['checks'][1]['argv'] = [sys.executable, '-B', '-c', code, '{target}', '{run}/tests.trx']
+        self.configure()
+        result = e.integrate(self.queue(), self.proposed(), execute=True, control_root=self.control)
+        self.assertEqual(result['status'], 'locally_verified')

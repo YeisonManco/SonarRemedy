@@ -1,0 +1,23 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Debt queue: preview manual runner",
+      "type": "process",
+      "command": "python",
+      "args": ["-B", "${input:pack}/debt_work.py", "--state", "${input:queue}", "run", "--provider", "manual"],
+      "problemMatcher": []
+    },
+    {
+      "label": "Debt queue: read-only monitor",
+      "type": "process",
+      "command": "python",
+      "args": ["-B", "${input:pack}/debt_work.py", "--state", "${input:queue}", "monitor"],
+      "problemMatcher": []
+    }
+  ],
+  "inputs": [
+    {"id": "pack", "type": "promptString", "description": "Approved Agentes pack path", "default": "C:/work/Agentes"},
+    {"id": "queue", "type": "promptString", "description": "Existing queue directory outside the target", "default": "C:/queue-state/run-001"}
+  ]
+}

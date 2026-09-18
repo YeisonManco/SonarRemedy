@@ -1,0 +1,29 @@
+{
+  "version": 1,
+  "target": "C:\\work\\approved-worktree",
+  "branch": "feature/debt",
+  "policy": "red-first",
+  "characterization_reason": "",
+  "test_paths": ["tests/ExistingTests.cs"],
+  "expected_red": {"Namespace.ExistingTests.ExpectedBehavior": "Assert.Equal() Failure"},
+  "allowed_outputs": [],
+  "checks": [
+    {
+      "name": "build",
+      "kind": "build",
+      "argv": ["C:\\Program Files\\dotnet\\dotnet.exe", "build", "Approved.sln", "--no-restore"],
+      "executable_sha256": "REPLACE_WITH_OWNER_VERIFIED_EXECUTABLE_SHA256",
+      "cwd": ".",
+      "timeout_seconds": 600
+    },
+    {
+      "name": "tests",
+      "kind": "trx",
+      "argv": ["C:\\Program Files\\dotnet\\dotnet.exe", "test", "tests/Approved.Tests.csproj", "--framework", "net8.0", "--no-build", "--no-restore", "--logger", "trx;LogFileName=tests.trx", "--results-directory", "{run}"],
+      "executable_sha256": "REPLACE_WITH_OWNER_VERIFIED_EXECUTABLE_SHA256",
+      "cwd": ".",
+      "timeout_seconds": 600,
+      "report": "tests.trx"
+    }
+  ]
+}

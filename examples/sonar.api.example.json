@@ -1,0 +1,9 @@
+{
+  "adapter": "api",
+  "repo": "C:/work/your-repository",
+  "url": "https://sonar.example.test",
+  "trusted_url": "https://sonar.example.test",
+  "project": "your-project-key",
+  "branch": "your-branch",
+  "timeout": 60
+}

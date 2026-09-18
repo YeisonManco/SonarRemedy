@@ -1,0 +1,8 @@
+{
+  "purpose": "Host reference only; this version has no config loader",
+  "execution": "host-manual-single-job",
+  "state": ".debt-state/run-001.json",
+  "task_limit": 4,
+  "target": "C:/work/your-repository",
+  "goals": {"coverage_gt": 90, "duplication_lt": 5, "smells": 0, "security_issues": 0, "unreviewed_hotspots": 0}
+}

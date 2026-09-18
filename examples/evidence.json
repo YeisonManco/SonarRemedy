@@ -1,0 +1,16 @@
+{
+  "revision": "REPLACE_WITH_EXACT_CURRENT_REVISION",
+  "build": false,
+  "tests": false,
+  "coverage": null,
+  "duplication": null,
+  "smells": null,
+  "security_issues": null,
+  "unreviewed_hotspots": null,
+  "sonar_timestamp": null,
+  "validated_timestamp": null,
+  "build_report": "reports/build.txt",
+  "tests_report": "reports/tests.xml",
+  "coverage_report": "reports/coverage.xml",
+  "sonar_report": "reports/sonar.json"
+}

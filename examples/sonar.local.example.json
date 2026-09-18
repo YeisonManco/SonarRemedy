@@ -1,0 +1,11 @@
+{
+  "adapter": "dotnet",
+  "repo": "C:/work/your-repository",
+  "solution": "YourSolution.sln",
+  "url": "https://sonar.example.test",
+  "trusted_url": "https://sonar.example.test",
+  "project": "your-project-key",
+  "branch": "your-branch",
+  "timeout": 600,
+  "poll_attempts": 60
+}

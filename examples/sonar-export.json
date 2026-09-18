@@ -1,0 +1,7 @@
+{
+  "version": 1,
+  "revision": "REPLACE_WITH_EXACT_BASE_REVISION",
+  "issues": [
+    {"id": "SONAR-001", "kind": "coverage", "path": "src/example.py", "line": 1}
+  ]
+}

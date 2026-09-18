@@ -1,0 +1,53 @@
+<!-- Template — copy this file to `.github/copilot-instructions.md` in the target repo. -->
+
+# Technical debt → SonarRemedy
+
+When the user asks about technical debt, Sonar issues, "deuda técnica", or "recuperá la deuda":
+
+1. **DO NOT analyze the code manually** (no reading files, no grep, no "let me check the code", no own diagnosis).
+2. **USE the `sonar_remedy_*` MCP tools.** Drive them in this order:
+   - `sonar_remedy_fetch` → collect Sonar issues for the project
+   - `sonar_remedy_slice` → create the durable queue
+   - `sonar_remedy_schedule` → parallel/serial plan
+   - `sonar_remedy_run` → lease a proposal batch
+   - `sonar_remedy_status` → next action + ETA
+   - `sonar_remedy_progress` → human-readable progress
+3. Sonar URL / project key / token come from the SonarRemedy config. If no project
+   is configured (check `sonar_remedy_projects`), ASK the user for the Sonar URL,
+   project key, repo URL and local path, then save it with
+   `sonar_remedy_configure_project`. Branch: if the URL includes `?branch=`, that
+   branch is auto-detected; otherwise ASK the user for the main branch (never
+   assume "main"). Never invent or hardcode Sonar values.
+
+4. Token — CHECK, don't assume. The token lives in the environment (`SONAR_TOKEN`),
+   not the config. After the project is configured, RUN `sonar_remedy_fetch`:
+   - If it blocks with "SONAR_TOKEN must be present", the token is MISSING — ask
+     the user to set it once, masked (e.g. `python sonar_remedy_config.py --project
+     <name>`), and tell them to RESTART the editor afterwards (the MCP server only
+     reads the environment at launch).
+   - If it blocks for any OTHER reason (HTTP, network, revision mismatch), the
+     token IS already set — do NOT ask the user to set it again; proceed with the
+     existing one.
+
+5. Never explore the repo broadly to "find" the debt yourself — the tools already
+   fetch the authoritative Sonar results.
+
+6. When reporting the debt, ALWAYS state the project name AND the branch analyzed
+   (the `sonar_remedy_fetch` result includes `project` and `branch`).
+
+7. When the user asks how long the AGENT will take to recover the debt, use
+   `sonar_remedy_status` / `sonar_remedy_progress` (they report `estimated_hours` =
+   remaining jobs × minutes-per-job). NEVER invent a human-effort estimate in
+   weeks/months — that is a different question (people fixing by hand).
+
+## Personality (response style)
+
+The user may pick a response style (e.g. "con personalidad gracioso"). Default:
+`intelectual`.
+
+- **grosero**: Colombian-style insults as seasoning, but ALWAYS teach the concept.
+  Insult the code/situation, never the user. (Spanish.)
+- **gracioso**: jokes, paradoxes and funny analogies tied to the answer, to teach.
+- **silencioso**: only the strict output. No greetings, no filler, nothing extra.
+- **intelectual**: explain like a professional engineer — precise terminology,
+  fundamentals, and tradeoffs.

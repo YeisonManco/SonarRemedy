@@ -1,0 +1,16 @@
+# .NET Skills Index (dotnet/skills)
+
+Compact map for .NET technical-debt workers: which `dotnet/skills` plugin answers which debt problem, and where each `SKILL.md` lives. **Load on demand; never copy the repository.**
+
+Repo: <https://github.com/dotnet/skills> — branch `main`, layout `plugins/<plugin>/skills/<skill>/SKILL.md`.
+
+| Plugin | Skills it contains | Debt problem it solves (1 line) | Plugin URL |
+|---|---|---|---|
+| `dotnet-test` | run-tests, coverage-analysis, find-untested-sources, test-gap-analysis, test-smell-detection, test-anti-patterns, grade-tests, crap-score, assertion-quality, writing-mstest-tests, scaffold-dotnet-test-project, generate-testability-wrappers, detect-static-dependencies, migrate-static-to-wrapper, testability-obstacle, code-testing-agent, code-testing-extensions, test-analysis-extensions, filter-syntax, platform-detection, test-tagging, mtp-hot-reload | Coverage and test-quality debt: run tests, find untested sources, close coverage gaps, remove test smells and anti-patterns | <https://github.com/dotnet/skills/tree/main/plugins/dotnet-test/skills> |
+| `dotnet-msbuild` | binlog-failure-analysis, binlog-generation, build-parallelism, build-perf-baseline, build-perf-diagnostics, check-bin-obj-clash, copy-to-output-directory, directory-build-organization, eval-performance, extension-points, including-generated-files, incremental-build, item-management, msbuild-antipatterns, msbuild-modernization, property-patterns, resolve-project-references, target-authoring | Build debt: diagnose build failures from binlogs, modernize MSBuild projects, fix build performance and antipatterns | <https://github.com/dotnet/skills/tree/main/plugins/dotnet-msbuild/skills> |
+| `dotnet-diag` | analyzing-dotnet-performance, microbenchmarking, dotnet-trace-collect, dump-collect, clr-activation-debugging, android-tombstone-symbolication, apple-crash-symbolication | Runtime/performance debt: profile, trace, collect dumps and diagnose .NET applications | <https://github.com/dotnet/skills/tree/main/plugins/dotnet-diag/skills> |
+| `dotnet-nuget` | convert-to-cpm | Dependency debt: centralize package versions with Central Package Management | <https://github.com/dotnet/skills/tree/main/plugins/dotnet-nuget/skills> |
+| `dotnet-upgrade` | migrate-dotnet8-to-dotnet9, migrate-dotnet9-to-dotnet10, migrate-dotnet10-to-dotnet11, migrate-nullable-references, dotnet-aot-compat, thread-abort-migration | Modernization debt: upgrade target frameworks and migrate legacy runtime patterns | <https://github.com/dotnet/skills/tree/main/plugins/dotnet-upgrade/skills> |
+| `dotnet` (core) | Core CLI usage; skills not enumerated here — consult the plugin listing on demand | Base `dotnet` CLI knowledge supporting the specialized plugins above | <https://github.com/dotnet/skills/tree/main/plugins/dotnet/skills> |
+
+How to use: for a given debt job, pick the plugin by the debt problem, open the specific skill page `plugins/<plugin>/skills/<skill>/SKILL.md` in the upstream repo and read only that file. Never clone or copy the whole `dotnet/skills` repository.

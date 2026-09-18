@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Offline operator-attested validation envelope",
+  "description": "CLI additionally enforces relative path safety, report existence/size/hash, current revision equality and 24-hour freshness. This schema is documentation; the CLI uses standard-library checks.",
+  "type": "object",
+  "required": ["revision", "build", "tests", "coverage", "duplication", "smells", "security_issues", "unreviewed_hotspots", "sonar_timestamp", "validated_timestamp", "build_report", "tests_report", "coverage_report", "sonar_report"],
+  "properties": {
+    "revision": {"type": "string", "pattern": "^[A-Za-z0-9_.-]{1,128}$"},
+    "build": {"const": true},
+    "tests": {"const": true},
+    "coverage": {"type": "number", "exclusiveMinimum": 90, "maximum": 100},
+    "duplication": {"type": "number", "minimum": 0, "exclusiveMaximum": 5},
+    "smells": {"type": "integer", "const": 0},
+    "security_issues": {"type": "integer", "const": 0},
+    "unreviewed_hotspots": {"type": "integer", "const": 0},
+    "sonar_timestamp": {"type": "number", "minimum": 0},
+    "validated_timestamp": {"type": "number", "minimum": 0},
+    "build_report": {"$ref": "#/$defs/report"},
+    "tests_report": {"$ref": "#/$defs/report"},
+    "coverage_report": {"$ref": "#/$defs/report"},
+    "sonar_report": {"$ref": "#/$defs/report"}
+  },
+  "$defs": {
+    "report": {"type": "string", "minLength": 1, "maxLength": 240, "pattern": "^[A-Za-z0-9_. /-]+$"}
+  }
+}

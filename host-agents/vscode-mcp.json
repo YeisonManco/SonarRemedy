@@ -1,0 +1,9 @@
+{
+  "servers": {
+    "sonar-remedy": {
+      "type": "stdio",
+      "command": "python",
+      "args": ["-B", "D:/repos/MVM/Fronteras/Agentes/sonar_remedy_mcp.py"]
+    }
+  }
+}

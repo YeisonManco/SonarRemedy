@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+build/
+dist/
+
+# SonarRemedy runtime data (never commit)
+.debt-state/
+.debt-runs/
+.debt-control/
+.codegraph/
+debt-runner.log
+*.sqlite3
+*.sqlite3-journal
+
+# Real/sample data
+sonar.api.main.json
+sonar.regfro.json
+
+# Internal dev history (task trackers)
+odd/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
