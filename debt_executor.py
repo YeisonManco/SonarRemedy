@@ -32,13 +32,20 @@ def relative_name(name: str) -> str:
 
 
 def snapshot(root: Path) -> dict[str, str]:
-    """Hash all target files, including ignored inputs; exclude root Git metadata only."""
+    """Hash the target sources; exclude Git metadata and regenerated outputs."""
     root = q.local_path(root, exists=True)
     files, total, visited = {}, 0, 0
+    # Machine-regenerated directories are not bound: build outputs are
+    # rewritten by the very checks the harness runs (hashing them would make
+    # every configure→build→integrate cycle look contaminated), IDE state is
+    # locked while editors run, and none of them are legitimate fix targets.
+    # Declared generated files stay governed by allowed_outputs instead.
+    volatile = {"bin", "obj", ".vs", ".idea", "TestResults", "node_modules"}
     for base, dirs, names in os.walk(root, followlinks=False):
         if Path(base) == root:
             dirs[:] = [name for name in dirs if name != ".git"]
             names = [name for name in names if name != ".git"]
+        dirs[:] = [name for name in dirs if name not in volatile]
         for name in sorted(dirs + names):
             path = q.local_path(Path(base) / name, exists=True)
             visited += 1
@@ -48,7 +55,15 @@ def snapshot(root: Path) -> dict[str, str]:
             if path.is_dir():
                 files[key] = "directory"
             else:
-                data = q.read_bytes(path, q.MAX_SOURCE)
+                try:
+                    data = q.read_bytes(path, q.MAX_SOURCE)
+                except OSError as error:
+                    # Locked/unreadable files (IDE indexes, running outputs)
+                    # must not crash the binding: record a deterministic
+                    # marker instead. If the file later becomes readable, the
+                    # snapshot legitimately differs and re-slice is required.
+                    files[key] = f"unreadable:{type(error).__name__}"
+                    continue
                 total += len(data)
                 if total > 256 * 1024 * 1024:
                     raise q.Blocked("target_snapshot_byte_budget")

@@ -2,6 +2,12 @@
 
 All notable changes to SonarRemedy are documented here.
 
+## [0.6.4] - 2026-09-19
+
+### Fixed
+
+- **Snapshot tolerates locked files and skips regenerated outputs** — `configure` crashed with bare `PermissionError` on Visual Studio's locked `.vsidx` indexes, and real .NET repos exceed the 256MB snapshot budget with `bin/`/`obj` duplicates. Unreadable files now record a deterministic `unreadable:<type>` marker (a later change still mismatches and requires re-slice), and machine-regenerated dirs (`bin`, `obj`, `.vs`, `.idea`, `TestResults`, `node_modules`) are excluded from the binding — the checks themselves rewrite them, so hashing them made every build look like contamination. Declared generated files stay governed by `allowed_outputs`.
+
 ## [0.6.3] - 2026-09-19
 
 ### Fixed

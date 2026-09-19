@@ -199,6 +199,35 @@ class ExecutorTests(QueueFixture):
             )
         self.assertEqual(self.calls, [])
 
+    def test_snapshot_records_unreadable_files_without_crashing(self):
+        from unittest.mock import patch
+
+        (self.target / "locked.cs").write_text("x")
+        real_read = q.read_bytes
+
+        def flaky(path, limit):
+            if Path(path).name == "locked.cs":
+                raise PermissionError("fixture locked")
+            return real_read(path, limit)
+
+        with patch.object(q, "read_bytes", side_effect=flaky):
+            snap = e.snapshot(self.target)
+        self.assertTrue(snap["locked.cs"].startswith("unreadable:"))
+        with patch.object(q, "read_bytes", side_effect=flaky):
+            self.assertEqual(snap, e.snapshot(self.target))
+
+    def test_snapshot_excludes_regenerated_outputs(self):
+        bindir = self.target / "bin" / "Debug"
+        bindir.mkdir(parents=True)
+        (bindir / "app.dll").write_bytes(b"\x00" * 1024)
+        vsdir = self.target / ".vs" / "proj"
+        vsdir.mkdir(parents=True)
+        (vsdir / "index.vsidx").write_text("x")
+        snap = e.snapshot(self.target)
+        self.assertTrue(any(key.endswith("a.cs") for key in snap))
+        self.assertFalse(any(part in ("bin", ".vs") for key in snap for part in key.split("/")))
+        self.assertEqual(snap, e.snapshot(self.target))
+
     def test_failed_integrated_check_quarantines_and_preserves_preimages(self):
         self.configure()
         job = self.proposed()
