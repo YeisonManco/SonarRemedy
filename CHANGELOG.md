@@ -2,6 +2,23 @@
 
 All notable changes to SonarRemedy are documented here.
 
+## [0.7.2] - 2026-09-19
+
+### Fixed
+
+- **Configured build checks failed NuGet restore inside the harness** — the process environment whitelist was missing `PROGRAMW6432` (the 64-bit Program Files path), so `dotnet build` under the harness failed restore with `Value cannot be null. (Parameter 'path1')` while the same build passed in a full shell. `check_environment` now forwards `PROGRAMW6432` (a folder path, no secret), so configured .NET builds restore and run identically inside and outside the harness.
+
+### Documentation
+
+- **Troubleshooting FAQ expanded with every real-world recovery** — new sections for build/check failures (`.failed.json` receipts, `path1` restore causes), barrier/journal recovery, path/OS errors, and .NET build/restore specifics. Each blocked reason now carries its exact action so the agent SUGGESTS the fix instead of stopping cold.
+- **Document-before-commit rule** — codified in `CONTRIBUTING.md` and the Copilot instructions: every user-visible change ships its docs (CHANGELOG, README, Troubleshooting FAQ) in the SAME commit; no commit or push without writing down what changed, why, and any recovery applied.
+
+## [0.7.1] - 2026-09-19
+
+### Fixed
+
+- **Copilot stopped cold on every blocked reason** — the troubleshooting FAQ only covered old cases (`target_identity_mismatch`, `missing_path`, token), so on the real-world failures (`baseline_build_failed`, `target_quarantined_or_interrupted`, `integration_journal_exists`, `Contaminated`/stale snapshot, `case_alias`, raw `OSError`) the AI had no documented answer and just asked "how do you want to proceed?". The FAQ now covers every recovery path with its exact action (read the `.failed.json` receipt, `doctor --repo --fix` for barriers/journals, re-slice on stale snapshot, pin SDK on `path1` restore errors), and the top-level rule now requires the AI to SUGGEST the prescribed fix instead of stopping cold.
+
 ## [0.7.0] - 2026-09-19
 
 ### Added

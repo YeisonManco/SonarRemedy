@@ -76,16 +76,20 @@ it drifts silently if you forget it.
 
 ## Documentation sync rule (MANDATORY)
 
-Every user-visible change ships its docs in the **same commit**:
+Every user-visible change ships its docs in the **same commit** — never commit or push a fix whose "why" is not written down. Docs go in WITH the fix, not as a follow-up:
 
 1. **`CHANGELOG.md`** — a new command, renamed flag, or fixed bug gets an entry
    (under a new version, or `## Unreleased` between releases).
 2. **`README.md`** — a new/renamed command, an install change, or a Quick-start
    step change is reflected here (Install, Quick start, editor setup, Safety
    boundaries).
+3. **`host-agents/sonarremedy-instructions.md` → Troubleshooting (FAQ)** — any
+   new blocked reason, recovery path, or environment quirk you discovered gets an
+   entry there, so the next agent (or Copilot) suggests it instead of stopping.
 
-No test catches a stale CHANGELOG or README — keep them in sync by hand with the
-code, exactly like the MCP sync rule above.
+No test catches a stale CHANGELOG, README or FAQ — keep them in sync by hand with
+the code, exactly like the MCP sync rule above. The only exception is a strictly
+mechanical revert of a mistake made in the same session (no new knowledge to record).
 
 ## Language skills (keep in sync)
 

@@ -188,6 +188,16 @@ class TransportTests(unittest.TestCase):
             ],
         )
 
+    def test_process_environment_forwards_programw6432_for_dotnet_restore(self):
+        # NuGet's restore graph needs the 64-bit Program Files path; without it
+        # `dotnet build` fails restore with `Value cannot be null (path1)`.
+        code = 'import os; print(os.getenv("PROGRAMW6432")); print(os.getenv("SONAR_TOKEN"))'
+        with patch.dict(
+            os.environ, {"PROGRAMW6432": r"C:\Program Files", "SONAR_TOKEN": "fixture-private"}
+        ):
+            result = t.run_process([sys.executable, "-B", "-c", code], PACK)
+        self.assertEqual(result["stdout"].splitlines(), [rb"C:\Program Files", b"None"])
+
     def test_timeout_terminates_descendant_not_only_parent(self):
         code = (
             'import subprocess,sys,time; p=subprocess.Popen([sys.executable,"-c","import time; time.sleep(30)"]); '

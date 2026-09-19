@@ -544,6 +544,9 @@ def check_environment() -> dict[str, str]:
     # by Windows-hosted SDK toolchains (e.g. dotnet/NuGet) to resolve their
     # per-user package cache; without them a configured build check silently
     # produces a different (incomplete) output set instead of failing loudly.
+    # PROGRAMW6432 (the 64-bit Program Files path) is required by NuGet's restore
+    # graph on 64-bit Windows: without it `dotnet build` fails restore with
+    # `Value cannot be null. (Parameter 'path1')`.
     allowed = {
         "SYSTEMROOT",
         "WINDIR",
@@ -555,6 +558,7 @@ def check_environment() -> dict[str, str]:
         "USERPROFILE",
         "APPDATA",
         "LOCALAPPDATA",
+        "PROGRAMW6432",
     }
     return {k: v for k, v in os.environ.items() if k.upper() in allowed}
 

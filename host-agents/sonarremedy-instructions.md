@@ -7,7 +7,7 @@ The `sonar_remedy_*` MCP tools are the ONLY interface to SonarRemedy. Read this 
 For technical debt, Sonar issues, "deuda técnica", or "recuperá la deuda", ALWAYS drive the `sonar_remedy_*` tools. Never fall back to doing it manually:
 
 - If SonarRemedy is NOT installed or the tools are missing → SAY so ("no encontré SonarRemedy instalado, ¿querés que lo instale?") and STOP. Do not do the work yourself.
-- If a command fails (returns `blocked` or an error) → SAY so: report WHICH command failed and WHY (its `reason`), and ASK how to proceed. Do NOT silently switch to manual analysis.
+- If a command fails (returns `blocked` or an error) → SAY so: report WHICH command failed and WHY (its `reason`), look the reason up in the Troubleshooting FAQ below, and SUGGEST the documented recovery before asking to proceed. Do NOT stop cold with just "how do you want to proceed?" — always propose the fix the FAQ prescribes.
 
 Only if the human EXPLICITLY says "no uses SonarRemedy" (or similar) may you do the work yourself. If the human asked you to use SonarRemedy, using it is not optional.
 
@@ -131,13 +131,45 @@ Rules (a wrong field type REJECTS the whole proposal):
 
 ## Troubleshooting (FAQ)
 
-When a command fails with a blocked reason, use this table instead of guessing or doing manual work:
+When a command fails with a blocked reason, use this table instead of guessing or doing manual work. For EVERY one: report the reason, apply the documented recovery, and SUGGEST it to the human — never stop cold without proposing the fix.
 
 - **`target_identity_mismatch`** — the queue is bound to a different checkout/branch/revision than what is running. Run `sonar_remedy_doctor --state <queue> --repo <repo>` to see WHICH field differs and the exact fix. It is a safety block, not a bug: always use the SAME `--repo` path across `fetch` → `slice` → `run` (one worktree per branch). The queue's binding is the source of truth for the branch — do NOT re-assert the config's `main_branch`.
 - **`missing_path`** — `--state` is not the queue directory. It must be the directory created by `slice` (it contains `queue.sqlite3`), not an export `.json` file.
 - **Outdated project setup** — run `sonar_remedy_doctor` with `fix: true` (or `sonarremedy init`) to re-sync the instructions + version marker.
 - **"No aparece `.sonarremedy/`"** — it is gitignored (local state only), so Copilot's file search skips it. The full instructions are at `.github/sonarremedy-instructions.md` (readable). Do NOT use `.sonarremedy/` to decide anything.
 - **`SONAR_TOKEN must be present`** — the token is missing from the environment; ask the user to set it once (masked) and restart the editor. Any OTHER blocked reason (HTTP, 403, network, revision) means the token IS set — do NOT ask the user to set it again.
+
+### Build / check failures
+
+- **`baseline_build_failed`** — the configured build failed on the UNMODIFIED tree (before any fix), so the job is NOT at fault and stays `proposed` for retry. Read the attempt's `baseline-build.failed.json` (it carries `argv`, `exit_code`, `stdout_tail`) and report the exact `exit_code` + `stdout_tail` to the human. Common causes: a locked file (close Visual Studio / other dotnet processes), or the wrong .NET SDK (pin it with a `global.json` — see `path1` restore errors). After the environment is fixed, RETRY the same integrate; do NOT re-slice.
+- **`configured_build_failed`** (red/green phase) — the build failed AFTER a fix was applied. Read the `.failed.json` receipt and report it; the job is deferred. This one CAN indict the proposal.
+- **`baseline_check_process_failed` / `configured_check_process_failed`** — the process did not exit cleanly; read the `.failed.json` receipt and report `reason` + `stdout_tail`.
+
+### Barrier / journal recovery
+
+- **`target_quarantined_or_interrupted`** — an interrupted integrate left a barrier. Run `sonar_remedy_doctor --repo <path> --fix` (0.7.0+): it releases the barrier ONLY after verifying the tree still matches the pre-integration snapshot. Never hand-delete barrier files; a real `quarantine` needs the human.
+- **`integration_journal_exists_manual_review_required`** — a killed integrate left its journal folder. Same recovery: `sonar_remedy_doctor --repo <path> --fix` (verified release). Do not delete it yourself.
+- **`Contaminated: unexpected_target_write_or_stale_snapshot`** — the tree changed since `configure` (a new file was added, or a build ran). `configure` is one-shot per queue, so if the change is intentional (e.g. a `global.json` the human added), RE-SLICE a fresh queue (`state-<branch>-2`) so the snapshot re-captures it — then re-run configure + integrate. Report this to the human.
+
+### Path / OS errors
+
+- **`case_alias`** — a path's case differs from disk (often the temp dir or `dotnet.EXE` vs `dotnet.exe`). Update the pack to 0.6.1+ (which canonicalizes) and re-run `detect-checks` / the command with the canonical path.
+- **Raw `OSError` / `PermissionError`** — the reason includes the file/operation (0.6.3+). Report it and check locks/permissions (a file open in another process, read-only queue, disk full).
+
+### .NET build/restore specifics
+
+- **`Value cannot be null. (Parameter 'path1')` in `NuGet.targets` during restore** — the restore graph failed, NOT the code. Three known causes, in order: (1) the wrong .NET SDK is being used — pin it with a root `global.json` (`{"sdk":{"version":"8.0.319","rollForward":"latestFeature"}}`, matching the installed SDK), because a newer SDK can break `net8.0` restore; (2) the harness environment is missing a variable — fixed in the pack 0.7.2+ (forward `PROGRAMW6432`), so update the pack; (3) a locked file — close Visual Studio / other `dotnet` processes. Read the `.failed.json` `stdout_tail` and report the exact SDK line + the project that failed.
+- **Build passes in a terminal but fails inside the harness** — the harness runs with a whitelisted environment; a missing variable breaks `dotnet`/NuGet. Report it as a pack defect (it was `PROGRAMW6432` once); do not hand-patch the target.
+- **`Compilación correcta` / "build succeeded" in the receipt means the environment is fixed** — retry the same integrate; the job stays `proposed`.
+
+## Documentation rule (agents — read before committing or pushing)
+
+Every user-visible event MUST be documented in the SAME change that caused it — before any commit or push. Concretely:
+
+- A new blocked reason, a recovery you had to apply, or a fix you (or the human) discovered → add an entry to the Troubleshooting FAQ above AND a line to `CHANGELOG.md` (under `## Unreleased` or a new version).
+- A changed command, flag, behavior, or install step → `README.md` + `CHANGELOG.md` in the same change.
+- Never commit or push a fix whose "why" (the failure, the cause, the recovery) is not written down. If the docs are stale, fix the docs FIRST, then commit the fix and the docs together.
+- This rule applies to the pack itself and to any repo you touch on the human's behalf; the only exception is a strictly mechanical revert of a mistake you made in the same session (no new knowledge to record).
 
 ## Personality (response style)
 
