@@ -17,6 +17,7 @@ All notable changes to SonarRemedy are documented here.
 - **Fetch with zero issues** — no longer crashes with `IndexError`; writes an empty export and reports `issues_total: 0`.
 - **Missing config** — `fetch` without a configured project now reports `config not found` (a clear `ConfigError`) instead of a raw `FileNotFoundError`.
 - **`init` gitignores only the local state** — `.sonarremedy/` and `.vscode/mcp.json` (machine-specific) are added to `.gitignore`. `.github/copilot-instructions.md` is NOT gitignored: it is the user's own file (Copilot reads it from its standard location) and may already be tracked.
+- **Full Copilot instructions moved under `.github/`** — `sonarremedy-instructions.md` now lives at `.github/sonarremedy-instructions.md`, not `.sonarremedy/instructions.md`: Copilot's file search skips gitignored paths, so a pointer into `.sonarremedy/` was unreadable. The pointer (`.github/copilot-instructions.md`) references the new path.
 - **Detailed identity mismatch** — `target_identity_mismatch` now reports WHICH field (root/branch/revision) and its expected vs actual values, so the operator (or Copilot) sees the exact discrepancy instead of a bare `Blocked`.
 - **CLI shows the real block reason** — the facade only recognized `sonar_fetch.Blocked`, so a `debt_queue.Blocked` (or `sonar_suppressions.Blocked`, etc.) reported the generic `"Blocked"` instead of the actual reason. It now recognizes every `Blocked` (by name) and reports the real message.
 

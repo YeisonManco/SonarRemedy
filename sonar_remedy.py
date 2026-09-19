@@ -114,13 +114,16 @@ def _write_init_files(target: str) -> tuple[str, str, str]:
     else:
         pointer_section = (
             "# SonarRemedy\n\n"
-            "Use the `sonar_remedy_*` MCP tools; read `.sonarremedy/instructions.md`.\n"
+            "Use the `sonar_remedy_*` MCP tools; read `.github/sonarremedy-instructions.md`.\n"
         )
     # Merge (preserve the user's own instructions) rather than overwrite.
     pointer_path = _merge_copilot_instructions(target, pointer_section)
+    # The full instructions live under .github/ (NOT .sonarremedy/, which is
+    # gitignored): Copilot's file search skips gitignored paths, so a pointer to
+    # a file inside .sonarremedy/ would be unreadable.
     full_path = _copy(
         "sonarremedy-instructions.md",
-        os.path.join(target, ".sonarremedy", "instructions.md"),
+        os.path.join(target, ".github", "sonarremedy-instructions.md"),
         "# SonarRemedy\n\nUse the `sonar_remedy_*` MCP tools to recover Sonar debt.\n",
     )
     return mcp_path, pointer_path, full_path

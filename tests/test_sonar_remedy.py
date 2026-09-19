@@ -874,7 +874,7 @@ class InitCommandTests(unittest.TestCase):
             self.assertEqual(code, 0)
             mcp_path = os.path.join(d, ".vscode", "mcp.json")
             instr_path = os.path.join(d, ".github", "copilot-instructions.md")
-            full_path = os.path.join(d, ".sonarremedy", "instructions.md")
+            full_path = os.path.join(d, ".github", "sonarremedy-instructions.md")
             self.assertTrue(os.path.isfile(mcp_path))
             self.assertTrue(os.path.isfile(instr_path))
             self.assertTrue(os.path.isfile(full_path))
