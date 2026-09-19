@@ -505,6 +505,14 @@ def main(argv: list[str] | None = None) -> int:
         "reset", help="remove .sonarremedy/ entirely + sibling worktrees (back to zero)"
     )
     reset_cmd.add_argument("--dir", help="target project directory (default: current)")
+    rules_cmd = commands.add_parser("rules", help="manage exclusion rules (whitelist/blacklist)")
+    rules_cmd.add_argument("--dir", help="target project directory (default: current)")
+    rules_cmd.add_argument(
+        "action",
+        choices=["list", "allow", "block", "remove"],
+        help="list | allow (whitelist) | block (blacklist) | remove",
+    )
+    rules_cmd.add_argument("rule", nargs="?", help="rule name (for allow/block/remove)")
     supp_cmd = commands.add_parser(
         "scan-suppressions", help="detect code-level suppressions that may evade Sonar"
     )
@@ -646,6 +654,25 @@ def main(argv: list[str] | None = None) -> int:
             target = os.path.abspath(args.dir or os.getcwd())
             print(json.dumps(_reset(target), sort_keys=True))
             return 0
+        if args.command == "rules":
+            import sonar_exclusions_report as report
+
+            target = os.path.abspath(args.dir or os.getcwd())
+            if args.action == "list":
+                print(json.dumps(report.list_rules(target), sort_keys=True))
+                return 0
+            if args.action in ("allow", "block"):
+                if not args.rule:
+                    raise rc.ConfigError("rules allow/block require a rule name")
+                list_name = "whitelist" if args.action == "allow" else "blacklist"
+                print(json.dumps(report.add_rule(target, args.rule, list_name), sort_keys=True))
+                return 0
+            if args.action == "remove":
+                if not args.rule:
+                    raise rc.ConfigError("rules remove requires a rule name")
+                print(json.dumps(report.remove_rule(target, args.rule), sort_keys=True))
+                return 0
+            raise rc.ConfigError("unknown rules action: " + args.action)
         rcfg = _load_config(args)
         if args.command == "scan-suppressions":
             import sonar_suppressions

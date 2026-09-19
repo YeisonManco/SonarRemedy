@@ -65,6 +65,16 @@ class ExclusionsReportTests(unittest.TestCase):
         self.write("README.md", "this mentions NOSONAR in prose\n")
         self.assertEqual(self.scan()["findings"], [])
 
+    def test_rules_list_add_block_remove(self):
+        report.add_rule(self.root, "ANGULAR.TS_IGNORE", "whitelist")
+        report.add_rule(self.root, "DOTNET.NOSONAR", "blacklist")
+        data = report.list_rules(self.root)
+        self.assertIn("ANGULAR.TS_IGNORE", data["whitelist"])
+        self.assertIn("DOTNET.NOSONAR", data["blacklist"])
+        result = report.remove_rule(self.root, "ANGULAR.TS_IGNORE")
+        self.assertIn("whitelist", result["removed_from"])
+        self.assertNotIn("ANGULAR.TS_IGNORE", report.list_rules(self.root)["whitelist"])
+
 
 if __name__ == "__main__":
     unittest.main()

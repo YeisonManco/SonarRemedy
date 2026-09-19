@@ -204,6 +204,59 @@ def load_rules(target: str | Path) -> dict[str, Any]:
     return {"whitelist": set(), "blacklist": set()}
 
 
+def rules_path(target: str | Path) -> Path:
+    return Path(target) / ".sonarremedy" / "rules.json"
+
+
+def _read_rules_file(target: str | Path) -> dict[str, list[str]]:
+    path = rules_path(target)
+    if path.is_file():
+        with open(path, encoding="utf-8") as handle:
+            data = json.load(handle)
+        return {
+            "whitelist": sorted(set(data.get("whitelist", []))),
+            "blacklist": sorted(set(data.get("blacklist", []))),
+        }
+    return {"whitelist": [], "blacklist": []}
+
+
+def _write_rules_file(target: str | Path, data: dict[str, list[str]]) -> Path:
+    path = rules_path(target)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "w", encoding="utf-8") as handle:
+        json.dump(data, handle, indent=2, sort_keys=True)
+        handle.write("\n")
+    return path
+
+
+def list_rules(target: str | Path) -> dict[str, Any]:
+    data = _read_rules_file(target)
+    return {"status": "ok", "whitelist": data["whitelist"], "blacklist": data["blacklist"]}
+
+
+def add_rule(target: str | Path, rule: str, list_name: str) -> dict[str, Any]:
+    data = _read_rules_file(target)
+    data[list_name] = sorted(set(data[list_name]) | {rule})
+    _write_rules_file(target, data)
+    return {"status": "ok", "whitelist": data["whitelist"], "blacklist": data["blacklist"]}
+
+
+def remove_rule(target: str | Path, rule: str) -> dict[str, Any]:
+    data = _read_rules_file(target)
+    removed = []
+    for list_name in ("whitelist", "blacklist"):
+        if rule in data[list_name]:
+            data[list_name].remove(rule)
+            removed.append(list_name)
+    _write_rules_file(target, data)
+    return {
+        "status": "ok",
+        "removed_from": removed,
+        "whitelist": data["whitelist"],
+        "blacklist": data["blacklist"],
+    }
+
+
 def scan(repo: str | Path, *, rules: dict[str, Any] | None = None) -> dict[str, Any]:
     try:
         root = Path(repo).resolve(strict=True)

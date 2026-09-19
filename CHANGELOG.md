@@ -2,6 +2,12 @@
 
 All notable changes to SonarRemedy are documented here.
 
+## [0.2.7] - 2026-09-18
+
+### Added
+
+- **`rules`** — manage the exclusion whitelist/blacklist: `rules list`, `rules allow <rule>`, `rules block <rule>`, `rules remove <rule>` (stored in `.sonarremedy/rules.json`).
+
 ## [0.2.6] - 2026-09-18
 
 ### Added
