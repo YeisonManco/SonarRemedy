@@ -2,6 +2,14 @@
 
 All notable changes to SonarRemedy are documented here.
 
+## [0.2.5] - 2026-09-18
+
+### Added
+
+- **`init` idempotent + `.sonarremedy/`** — creates `.sonarremedy/rules.json` (whitelist/blacklist), `queues/`, `runs/`, `temp/`, and adds `.sonarremedy/` to `.gitignore` (only what's missing; never destroys).
+- **`clean`** — removes generated state (`queues/`, `runs/`, `temp/`) + the sibling `*-remedy-wtrees/` folder, keeping `rules.json`.
+- **`reset`** — removes `.sonarremedy/` entirely + the sibling worktrees (back to zero).
+
 ## [0.2.4] - 2026-09-18
 
 ### Added

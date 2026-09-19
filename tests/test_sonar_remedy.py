@@ -862,6 +862,57 @@ class InitCommandTests(unittest.TestCase):
                 instr_content = fh.read()
             self.assertIn("sonar_remedy_", instr_content)
 
+    def test_init_creates_sonarremedy_dir_and_rules(self):
+        with tempfile.TemporaryDirectory() as d:
+            with contextlib.redirect_stdout(io.StringIO()):
+                sonar_remedy.main(["init", "--dir", d])
+            base = os.path.join(d, ".sonarremedy")
+            self.assertTrue(os.path.isfile(os.path.join(base, "rules.json")))
+            for sub in ("queues", "runs", "temp"):
+                self.assertTrue(os.path.isdir(os.path.join(base, sub)))
+            with open(os.path.join(d, ".gitignore"), encoding="utf-8") as fh:
+                self.assertIn(".sonarremedy/", fh.read())
+
+    def test_init_is_idempotent(self):
+        with tempfile.TemporaryDirectory() as d:
+            with contextlib.redirect_stdout(io.StringIO()):
+                sonar_remedy.main(["init", "--dir", d])
+            rules = os.path.join(d, ".sonarremedy", "rules.json")
+            with open(rules, "w", encoding="utf-8") as fh:
+                fh.write('{"whitelist": ["ANGULAR.TS_IGNORE"], "blacklist": []}\n')
+            with contextlib.redirect_stdout(io.StringIO()):
+                sonar_remedy.main(["init", "--dir", d])
+            with open(rules, encoding="utf-8") as fh:
+                self.assertIn("ANGULAR.TS_IGNORE", fh.read())
+
+    def test_clean_keeps_rules_and_reset_removes_all(self):
+        with tempfile.TemporaryDirectory() as d:
+            with contextlib.redirect_stdout(io.StringIO()):
+                sonar_remedy.main(["init", "--dir", d])
+            generated = os.path.join(d, ".sonarremedy", "queues", "q.sqlite")
+            with open(generated, "w", encoding="utf-8") as fh:
+                fh.write("x")
+            with contextlib.redirect_stdout(io.StringIO()):
+                sonar_remedy.main(["clean", "--dir", d])
+            self.assertTrue(os.path.isfile(os.path.join(d, ".sonarremedy", "rules.json")))
+            self.assertFalse(os.path.isdir(os.path.join(d, ".sonarremedy", "queues")))
+            with contextlib.redirect_stdout(io.StringIO()):
+                sonar_remedy.main(["reset", "--dir", d])
+            self.assertFalse(os.path.isdir(os.path.join(d, ".sonarremedy")))
+
+    def test_clean_and_reset_remove_sibling_worktrees(self):
+        with tempfile.TemporaryDirectory() as parent:
+            project = os.path.join(parent, "proj")
+            os.makedirs(project)
+            with contextlib.redirect_stdout(io.StringIO()):
+                sonar_remedy.main(["init", "--dir", project])
+            wt_root = os.path.join(parent, "proj-remedy-wtrees")
+            os.makedirs(os.path.join(wt_root, "main"))
+            self.assertTrue(os.path.isdir(wt_root))
+            with contextlib.redirect_stdout(io.StringIO()):
+                sonar_remedy.main(["clean", "--dir", project])
+            self.assertFalse(os.path.isdir(wt_root))
+
 
 class ScanSuppressionsCommandTests(unittest.TestCase):
     def setUp(self):

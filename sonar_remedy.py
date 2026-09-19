@@ -3,6 +3,7 @@
 import argparse
 import json
 import os
+import shutil
 import subprocess
 import sys
 from importlib.metadata import PackageNotFoundError
@@ -79,6 +80,79 @@ def _write_init_files(target: str) -> tuple[str, str]:
     with open(instructions_path, "w", encoding="utf-8") as handle:
         handle.write(content)
     return mcp_path, instructions_path
+
+
+def _sonarremedy_dir(target: str) -> str:
+    return os.path.join(os.path.abspath(target), ".sonarremedy")
+
+
+def _worktree_root(target: str) -> str:
+    """Sibling folder for per-branch worktrees (outside the repo)."""
+    absolute = os.path.abspath(target)
+    return os.path.join(os.path.dirname(absolute), os.path.basename(absolute) + "-remedy-wtrees")
+
+
+def _ensure_gitignore(target: str) -> bool:
+    """Append .sonarremedy/ to .gitignore if missing. Returns True when added."""
+    gitignore = os.path.join(os.path.abspath(target), ".gitignore")
+    existing = ""
+    if os.path.isfile(gitignore):
+        with open(gitignore, encoding="utf-8") as handle:
+            existing = handle.read()
+    if ".sonarremedy/" in existing:
+        return False
+    with open(gitignore, "a", encoding="utf-8") as handle:
+        if existing and not existing.endswith("\n"):
+            handle.write("\n")
+        handle.write(".sonarremedy/\n")
+    return True
+
+
+def _init_sonarremedy_dir(target: str) -> dict[str, Any]:
+    """Create .sonarremedy/ (rules.json + generated subdirs); idempotent."""
+    base = _sonarremedy_dir(target)
+    created: list[str] = []
+    for sub in ("queues", "runs", "temp"):
+        directory = os.path.join(base, sub)
+        if not os.path.isdir(directory):
+            os.makedirs(directory, exist_ok=True)
+            created.append(sub)
+    rules = os.path.join(base, "rules.json")
+    if not os.path.isfile(rules):
+        with open(rules, "w", encoding="utf-8") as handle:
+            json.dump({"whitelist": [], "blacklist": []}, handle, indent=2, sort_keys=True)
+            handle.write("\n")
+        created.append("rules.json")
+    return {"base": base, "created": created, "gitignore_added": _ensure_gitignore(target)}
+
+
+def _clean(target: str) -> dict[str, Any]:
+    """Remove generated state (queues/runs/temp) + sibling worktrees; keep rules.json."""
+    removed = []
+    for sub in ("queues", "runs", "temp"):
+        directory = os.path.join(_sonarremedy_dir(target), sub)
+        if os.path.isdir(directory):
+            shutil.rmtree(directory, ignore_errors=True)
+            removed.append(".sonarremedy/" + sub)
+    worktrees = _worktree_root(target)
+    if os.path.isdir(worktrees):
+        shutil.rmtree(worktrees, ignore_errors=True)
+        removed.append(os.path.basename(worktrees))
+    return {"status": "cleaned", "removed": removed}
+
+
+def _reset(target: str) -> dict[str, Any]:
+    """Remove the whole .sonarremedy/ + sibling worktrees (back to zero)."""
+    removed = []
+    base = _sonarremedy_dir(target)
+    if os.path.isdir(base):
+        shutil.rmtree(base, ignore_errors=True)
+        removed.append(".sonarremedy/")
+    worktrees = _worktree_root(target)
+    if os.path.isdir(worktrees):
+        shutil.rmtree(worktrees, ignore_errors=True)
+        removed.append(os.path.basename(worktrees))
+    return {"status": "reset", "removed": removed}
 
 
 def next_action(states: dict[str, int]) -> str:
@@ -423,6 +497,14 @@ def main(argv: list[str] | None = None) -> int:
         "init", help="write .vscode/mcp.json + the Copilot instruction into a project"
     )
     init_cmd.add_argument("--dir", help="target project directory (default: current)")
+    clean_cmd = commands.add_parser(
+        "clean", help="remove generated state + sibling worktrees (keep rules.json)"
+    )
+    clean_cmd.add_argument("--dir", help="target project directory (default: current)")
+    reset_cmd = commands.add_parser(
+        "reset", help="remove .sonarremedy/ entirely + sibling worktrees (back to zero)"
+    )
+    reset_cmd.add_argument("--dir", help="target project directory (default: current)")
     supp_cmd = commands.add_parser(
         "scan-suppressions", help="detect code-level suppressions that may evade Sonar"
     )
@@ -536,6 +618,7 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "init":
             target = os.path.abspath(args.dir or os.getcwd())
             mcp_path, instructions_path = _write_init_files(target)
+            state = _init_sonarremedy_dir(target)
             print(
                 json.dumps(
                     {
@@ -543,10 +626,21 @@ def main(argv: list[str] | None = None) -> int:
                         "dir": target,
                         "mcp": mcp_path,
                         "instructions": instructions_path,
+                        "sonarremedy": state["base"],
+                        "created": state["created"],
+                        "gitignore_added": state["gitignore_added"],
                     },
                     sort_keys=True,
                 )
             )
+            return 0
+        if args.command == "clean":
+            target = os.path.abspath(args.dir or os.getcwd())
+            print(json.dumps(_clean(target), sort_keys=True))
+            return 0
+        if args.command == "reset":
+            target = os.path.abspath(args.dir or os.getcwd())
+            print(json.dumps(_reset(target), sort_keys=True))
             return 0
         rcfg = _load_config(args)
         if args.command == "scan-suppressions":

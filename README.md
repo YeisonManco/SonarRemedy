@@ -118,7 +118,9 @@ what the mechanical tools cannot: understanding the code and writing an idiomati
 | `projects` | List saved project configs |
 | `configure-project` | Save a project config non-interactively |
 | `configure-projects` | Interactively register multiple projects |
-| `init` | Wire up VS Code + Copilot (`.vscode/mcp.json` + instructions) |
+| `init` | Wire up VS Code + Copilot, and create `.sonarremedy/` (idempotent) |
+| `clean` | Remove generated state + sibling worktrees (keep `rules.json`) |
+| `reset` | Remove `.sonarremedy/` entirely + sibling worktrees (back to zero) |
 | `update` | `git pull` + reinstall the pack from its clone |
 
 ## Quick start
