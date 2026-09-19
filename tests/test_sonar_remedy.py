@@ -749,10 +749,16 @@ class HookTests(unittest.TestCase):
 
     def test_install_is_idempotent(self):
         sonar_hooks.install(self.gitproj)
+        with open(self._hook_path(self.gitproj), encoding="utf-8") as fh:
+            first = fh.read()
         result = sonar_hooks.install(self.gitproj)
         self.assertEqual(result["status"], "ok")
         with open(self._hook_path(self.gitproj), encoding="utf-8") as fh:
-            self.assertEqual(fh.read().count("SonarRemedy"), 1)
+            second = fh.read()
+        self.assertEqual(first, second)
+        # The pack path itself may contain the marker word (e.g. a
+        # `SonarRemedy` checkout folder), so count the marker, not the word.
+        self.assertEqual(second.count(sonar_hooks.MARKER), 1)
 
     def test_install_refuses_foreign_hook(self):
         with open(self._hook_path(self.gitproj), "w", encoding="utf-8") as fh:

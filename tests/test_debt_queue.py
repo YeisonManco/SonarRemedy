@@ -675,3 +675,22 @@ class LifecycleTests(QueueFixture):
 
         with self.assertRaisesRegex(q.Blocked, r"branch: expected='feature/queue', actual='other'"):
             q.check_identity(binding, reader)
+
+
+class CanonicalCaseTests(unittest.TestCase):
+    def test_repairs_case_alias_that_local_path_blocks(self):
+        with tempfile.TemporaryDirectory() as d:
+            (Path(d) / "AbC").mkdir()
+            aliased = str(Path(d) / "aBc")
+            with self.assertRaises(q.Blocked):
+                q.local_path(aliased, exists=True)
+            repaired = q.canonical_case(aliased)
+            self.assertEqual(repaired.name, "AbC")
+            self.assertEqual(q.local_path(repaired, exists=True), repaired)
+
+    def test_missing_tail_preserved_lexically(self):
+        with tempfile.TemporaryDirectory() as d:
+            (Path(d) / "AbC").mkdir()
+            repaired = q.canonical_case(str(Path(d) / "aBc" / "nope" / "queue.sqlite3"))
+            self.assertEqual(repaired.name, "queue.sqlite3")
+            self.assertEqual(repaired.parent.parent.name, "AbC")

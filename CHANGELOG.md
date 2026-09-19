@@ -2,6 +2,13 @@
 
 All notable changes to SonarRemedy are documented here.
 
+## [0.5.1] - 2026-09-19
+
+### Fixed
+
+- **Case-aliased paths in `autopilot`** — system-temp and hand-typed paths whose case differs from disk made `slice` fail with `case_alias` on CI while passing locally. `autopilot` now canonicalizes path case from disk at entry (new `debt_queue.canonical_case`, links and missing tails preserved so the security checks still see and block them).
+- **Hook idempotence test** — it counted the word "SonarRemedy" in the installed hook, which also matches a `SonarRemedy` checkout path (CI). It now compares installed bytes and counts the hook marker instead.
+
 ## [0.5.0] - 2026-09-19
 
 ### Added

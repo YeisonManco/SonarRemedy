@@ -499,8 +499,11 @@ def autopilot(
     import debt_queue
     import debt_runner
 
-    repo_abs = os.path.abspath(repo)
-    state_abs = os.path.abspath(state)
+    # Canonicalize case from disk (temp dirs and typed paths drift in case;
+    # links and missing tails are preserved for downstream checks to block).
+    repo_abs = str(debt_queue.canonical_case(repo))
+    state_abs = str(debt_queue.canonical_case(state))
+    export_abs = str(debt_queue.canonical_case(export)) if export else None
     resume_command = f"sonarremedy autopilot --state {state_abs} --repo {repo_abs} --execute"
     if integrate:
         resume_command += " --integrate"
@@ -542,7 +545,7 @@ def autopilot(
             }
         sliced = debt_queue.slice_queue(
             repo_abs,
-            export,
+            export_abs,
             state_abs,
             branch,
             execute=True,

@@ -97,6 +97,37 @@ def local_path(value: str | Path, *, exists: bool = False) -> Path:
     return path
 
 
+def canonical_case(value: str | Path) -> Path:
+    """Repair filename case from disk without resolving links.
+
+    `local_path` fails closed on case aliases (a real barrier-bypass class),
+    but user-typed and system-temp paths often drift in case only. This
+    rebuilds the existing prefix with the on-disk names; missing tails and
+    reparse points are preserved lexically so downstream checks still see
+    (and block) them.
+    """
+    path = Path(os.path.abspath(value))
+    rebuilt = Path(path.anchor)
+    parts = path.relative_to(path.anchor).parts
+    for index, part in enumerate(parts):
+        candidate = rebuilt / part
+        try:
+            info = candidate.lstat()
+        except OSError:
+            return rebuilt.joinpath(*parts[index:])
+        if is_reparse(info):
+            return rebuilt.joinpath(*parts[index:])
+        try:
+            names = [entry.name for entry in rebuilt.iterdir()]
+        except OSError:
+            return rebuilt.joinpath(*parts[index:])
+        match = [name for name in names if name.casefold() == part.casefold()]
+        if len(match) != 1:
+            return rebuilt.joinpath(*parts[index:])
+        rebuilt = rebuilt / match[0]
+    return rebuilt
+
+
 def source_path(root: Path, value: str) -> Path:
     if (
         not isinstance(value, str)
