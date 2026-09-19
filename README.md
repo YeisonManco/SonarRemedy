@@ -161,6 +161,18 @@ sonarremedy status --state <queue>
 
 If you skipped the install, replace `sonarremedy` with `python -B SonarRemedy/sonar_remedy.py` and `sonar-remedy-config` with `python -B SonarRemedy/sonar_remedy_config.py`.
 
+## Talk to the AI (after install + init)
+
+Paste these in Copilot Chat, in order. Close Visual Studio before integrating (locked files fail the build gate).
+
+1. *"Recuperá la deuda del proyecto <name> en la rama <branch>: fetch y después slice a un state nuevo `state-<branch>`. Explicame qué trajiste."*
+2. *"Corre el run con execute y avisame cuando estén las propuestas."*
+3. *(it writes/resumes proposals)* — if it asks for checks: *"Corre `sonar_remedy_detect_checks` con el repo, presentame borrador + faltantes y esperá."*
+4. Complete the `[HUMAN]` fields (exact bound branch, policy/reason or real RED markers), save as `checks.json`, then: *"Corre el configure dry-run y mostrame el sha."*
+5. Verify the sha, then: *"Aprobado con ese sha. Ejecutá el configure e integrá con autopilot `--integrate`."*
+
+Standing rules (also wired into the Copilot instructions by `init`): never do the work manually, never commit/push with `--no-verify`, and on any `blocked` report the exact reason and stop — a failed baseline build keeps the job `proposed` for retry, it never applies anything red.
+
 ## Deterministic flow (autopilot)
 
 Copilot interprets instructions, so it can improvise. `autopilot` is the harness that owns the flow instead: every call advances as far as the rules allow — setup-gate, slice, run, configure-gate, integrate, status — and reports its phase with the exact next command. The model only fills bounded proposals; it never chooses a step.
