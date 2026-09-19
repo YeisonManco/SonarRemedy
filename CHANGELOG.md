@@ -2,6 +2,12 @@
 
 All notable changes to SonarRemedy are documented here.
 
+## [0.5.2] - 2026-09-19
+
+### Fixed
+
+- **`checks.json` authoring gap** — binding failures said only `invalid_execution_config`, which no model or human could act on. Every validator rejection now names the exact field (`checks[1].timeout_seconds`, `checks[0].argv[0]`, …), plus new `docs/checks-reference.md` with every field rule, the sha256 computation command, and the dry-run → review → approve flow. The example template is pinned by test (shape contract) and a fully substituted copy is proven valid by test.
+
 ## [0.5.1] - 2026-09-19
 
 ### Fixed

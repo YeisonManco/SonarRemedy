@@ -77,7 +77,10 @@ def validate_config(config: dict[str, Any]) -> Path:
         or not isinstance(config["characterization_reason"], str)
         or len(config["characterization_reason"]) > 1000
     ):
-        raise q.Blocked("invalid_execution_config")
+        raise q.Blocked(
+            "invalid_execution_config: keys must be exactly "
+            f"{sorted(fields)}; see docs/checks-reference.md"
+        )
     root = q.local_path(config["target"], exists=True)
     for key in ("test_paths", "allowed_outputs"):
         values = config[key]
@@ -87,7 +90,9 @@ def validate_config(config: dict[str, Any]) -> Path:
             or not all(isinstance(v, str) for v in values)
             or len({v.casefold() for v in values}) != len(values)
         ):
-            raise q.Blocked("invalid_execution_paths")
+            raise q.Blocked(
+                f"invalid_execution_paths: {key} must be a list of <=2000 unique strings"
+            )
         for value in values:
             relative_name(value)
             q.local_path(root / value)
@@ -111,7 +116,10 @@ def validate_config(config: dict[str, Any]) -> Path:
             for k, v in red.items()
         )
     ):
-        raise q.Blocked("invalid_expected_assertions")
+        raise q.Blocked(
+            "invalid_expected_assertions: at most 100 test-name to assertion-marker pairs; "
+            "each marker must start with Assert., AssertionError: or Expected"
+        )
     if config["policy"] == "red-first" and (not red or not config["test_paths"]):
         raise q.Blocked("red_first_requires_exact_assertions_and_test_paths")
     if config["policy"] == "characterization" and (
@@ -120,9 +128,11 @@ def validate_config(config: dict[str, Any]) -> Path:
         raise q.Blocked("characterization_requires_explicit_reason_without_red_claim")
     checks = config["checks"]
     if not isinstance(checks, list) or not 2 <= len(checks) <= 8:
-        raise q.Blocked("configured_build_and_trx_checks_required")
+        raise q.Blocked(
+            f"configured_build_and_trx_checks_required: need 2..8 checks, got {len(checks) if isinstance(checks, list) else type(checks).__name__}"
+        )
     seen = set()
-    for check in checks:
+    for index, check in enumerate(checks):
         keys = {"name", "kind", "argv", "executable_sha256", "cwd", "timeout_seconds"}
         if isinstance(check, dict) and check.get("kind") == "trx":
             keys.add("report")
@@ -136,7 +146,10 @@ def validate_config(config: dict[str, Any]) -> Path:
             or type(check["timeout_seconds"]) is not int
             or not 1 <= check["timeout_seconds"] <= 1800
         ):
-            raise q.Blocked("invalid_configured_check")
+            raise q.Blocked(
+                f"invalid_configured_check: checks[{index}] needs exactly {sorted(keys)}, "
+                "kind build|trx, TOKEN name, timeout_seconds int 1..1800"
+            )
         seen.add(check["name"].casefold())
         argv = check["argv"]
         if (
@@ -147,21 +160,32 @@ def validate_config(config: dict[str, Any]) -> Path:
             or Path(argv[0]).suffix.lower() != ".exe"
             or Path(argv[0]).stem.lower() in ("git", "ssh", "sonar-scanner")
         ):
-            raise q.Blocked("invalid_check_argv")
+            raise q.Blocked(
+                f"invalid_check_argv: checks[{index}].argv must be 1..64 strings, "
+                "argv[0] an absolute .exe that is not git/ssh/sonar-scanner"
+            )
         if any(
             re.search(r"(?i)(sonar\.(token|login)|--password|--token|authorization:)", a)
             for a in argv
         ):
-            raise q.Blocked("credential_arguments_forbidden")
+            raise q.Blocked(
+                f"credential_arguments_forbidden: checks[{index}].argv must not carry secrets"
+            )
         if q.digest(q.read_bytes(argv[0], q.MAX_SOURCE)) != check["executable_sha256"]:
-            raise q.Blocked("check_executable_hash_mismatch")
+            raise q.Blocked(
+                f"check_executable_hash_mismatch: checks[{index}].argv[0]={argv[0]} "
+                "does not match executable_sha256; recompute the sha256 of those exact bytes"
+            )
         cwd = root if check["cwd"] == "." else root / relative_name(check["cwd"])
         if not q.local_path(cwd, exists=True).is_dir():
-            raise q.Blocked("check_cwd_unavailable")
+            raise q.Blocked(f"check_cwd_unavailable: checks[{index}].cwd={check['cwd']!r}")
         if check["kind"] == "trx":
             relative_name(check["report"])
             if "/" in check["report"] or not check["report"].endswith(".trx"):
-                raise q.Blocked("check_report_must_be_direct_trx_file")
+                raise q.Blocked(
+                    f"check_report_must_be_direct_trx_file: checks[{index}].report "
+                    "must be a bare filename ending in .trx"
+                )
     if {c["kind"] for c in checks} != {"build", "trx"} or checks[0]["kind"] != "build":
         raise q.Blocked("configured_build_before_trx_required")
     if config["policy"] == "red-first" and sum(c["kind"] == "trx" for c in checks) != 1:
@@ -181,10 +205,17 @@ def configure(
     if not execute:
         return {"status": "dry-run", "checks_sha256": sha, "policy": config["policy"]}
     if approved_sha256 != sha:
-        raise q.Blocked("explicit_reviewed_checks_hash_required")
+        raise q.Blocked(
+            "explicit_reviewed_checks_hash_required: recompute with dry-run "
+            f"`configure --checks <file>` (got {approved_sha256!r}, need {sha})"
+        )
     with work._open(write=True, identity=True) as (connection, binding):
         if str(root) != binding["root"] or config["branch"] != binding["branch"]:
-            raise q.Blocked("execution_config_binding_mismatch")
+            raise q.Blocked(
+                "execution_config_binding_mismatch: "
+                f"config target={root} branch={config['branch']!r} vs "
+                f"queue root={binding['root']} branch={binding['branch']!r}"
+            )
         if connection.execute("SELECT 1 FROM meta WHERE key='executor'").fetchone():
             raise q.Blocked("execution_config_already_bound")
         state = {"config": config, "config_sha256": sha, "snapshot": snapshot(root)}

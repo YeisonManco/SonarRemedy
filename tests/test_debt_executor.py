@@ -4,6 +4,7 @@ import hashlib
 import os
 import sys
 import time
+import unittest
 from pathlib import Path
 
 from test_debt_queue import QueueFixture
@@ -381,3 +382,46 @@ class ExecutorTests(QueueFixture):
         self.configure()
         result = e.integrate(self.queue(), self.proposed(), execute=True, control_root=self.control)
         self.assertEqual(result["status"], "locally_verified")
+
+
+class ChecksExampleTests(unittest.TestCase):
+    """The documented template must carry the exact required shape, and a fully
+    substituted copy must satisfy the validator (the satisfiable path exists)."""
+
+    def test_example_template_has_required_shape(self):
+        import json
+
+        pack = Path(__file__).resolve().parents[1]
+        example = json.loads((pack / "examples" / "debt-checks.example.json").read_text())
+        self.assertEqual(
+            set(example),
+            {
+                "version",
+                "target",
+                "branch",
+                "policy",
+                "characterization_reason",
+                "test_paths",
+                "expected_red",
+                "allowed_outputs",
+                "checks",
+            },
+        )
+        self.assertEqual(example["checks"][0]["kind"], "build")
+        self.assertIn("executable_sha256", example["checks"][0])
+
+    def test_substituted_example_passes_validation(self):
+        import json
+        import tempfile
+
+        pack = Path(__file__).resolve().parents[1]
+        example = json.loads((pack / "examples" / "debt-checks.example.json").read_text())
+        exe_sha = hashlib.sha256(Path(sys.executable).read_bytes()).hexdigest()
+        with tempfile.TemporaryDirectory() as d:
+            example["target"] = d
+            example["branch"] = "main"
+            for check in example["checks"]:
+                check["argv"] = [sys.executable, "-B", "-c", "pass"]
+                check["executable_sha256"] = exe_sha
+            root = e.validate_config(example)
+            self.assertEqual(str(root), d)

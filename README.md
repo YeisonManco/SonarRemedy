@@ -178,6 +178,14 @@ sonarremedy autopilot --state <queue> --repo <path> --execute --integrate
 - Proposals stop at `awaiting_proposals` with each `proposal_path`; integrating stops at the configure gate until checks are explicitly bound (`configure --checks ... --approve-checks-sha256 ... --execute`).
 - The same flow is available to Copilot as the `sonar_remedy_autopilot` MCP tool.
 
+## Authoring checks.json (executor binding)
+
+Integration runs **only** the check commands you explicitly bind — nothing else executes on the target. Write them from `examples/debt-checks.example.json` (a template: the sha256 placeholder must be replaced, never invented) following `docs/checks-reference.md`:
+
+1. Real absolute `.exe` paths, real `cwd`, real failing-test markers; compute each sha256 with `python -B -c "import hashlib,sys; print(hashlib.sha256(open(sys.argv[1],'rb').read()).hexdigest())" <tool.exe>` (recompute after every tool update).
+2. Dry-run first: `sonarremedy configure --state <queue> --repo <path> --checks <file>` — validates the shape and prints `checks_sha256` without writing.
+3. Review it yourself, then approve: repeat with `--approve-checks-sha256 <digest> --execute`.
+
 ## Commit gate (pre-push hook)
 
 `init` installs a pre-push hook into the project's `.git/hooks`, so broken code cannot be pushed: the hook runs the project's gates and blocks the push on red. Never use `--no-verify`.
