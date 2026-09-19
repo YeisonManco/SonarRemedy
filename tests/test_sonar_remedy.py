@@ -834,6 +834,122 @@ class DetectChecksTests(unittest.TestCase):
         self.assertIn("draft", output)
 
 
+class RecoverCommandTests(unittest.TestCase):
+    REVISION = "c" * 40
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.repo = os.path.join(self.tmp.name, "target")
+        os.makedirs(self.repo)
+        with open(os.path.join(self.repo, "a.cs"), "w", encoding="utf-8") as fh:
+            fh.write("class A { int Value() => 1; }\n")
+        self.state = os.path.join(self.tmp.name, "queue")
+        self.export = os.path.join(self.tmp.name, "export.json")
+        with open(self.export, "w", encoding="utf-8") as fh:
+            json.dump(
+                {
+                    "version": 1,
+                    "revision": self.REVISION,
+                    "issues": [
+                        {
+                            "id": "S1",
+                            "path": "a.cs",
+                            "kind": "smells",
+                            "line": 1,
+                            "rule": "csharp:S1",
+                        }
+                    ],
+                },
+                fh,
+            )
+        self.config_path = os.path.join(self.tmp.name, "config.json")
+        rc.save(_valid_config(), self.config_path)
+        self.checks = os.path.join(self.tmp.name, "checks.json")
+        exe_sha = __import__("hashlib").sha256(__import__("sys").executable.encode()).hexdigest()
+        # Minimal valid checks.json (characterization, build+trx).
+        with open(self.checks, "w", encoding="utf-8") as fh:
+            json.dump(
+                {
+                    "version": 1,
+                    "target": self.repo,
+                    "branch": "main",
+                    "policy": "characterization",
+                    "characterization_reason": "fixture",
+                    "test_paths": [],
+                    "expected_red": {},
+                    "allowed_outputs": [],
+                    "checks": [
+                        {
+                            "name": "build",
+                            "kind": "build",
+                            "argv": [__import__("sys").executable, "-B", "-c", "pass"],
+                            "executable_sha256": exe_sha,
+                            "cwd": ".",
+                            "timeout_seconds": 10,
+                        },
+                        {
+                            "name": "tests",
+                            "kind": "trx",
+                            "argv": [__import__("sys").executable, "-B", "-c", "pass", "{run}"],
+                            "executable_sha256": exe_sha,
+                            "cwd": ".",
+                            "timeout_seconds": 10,
+                            "report": "tests.trx",
+                        },
+                    ],
+                },
+                fh,
+            )
+
+    def _identity(self, root):
+        return {"root": str(root), "branch": "main", "revision": self.REVISION}
+
+    def _rcfg(self):
+        return _valid_config()
+
+    def test_recover_dry_run(self):
+        result = sonar_remedy.recover(self._rcfg(), self.repo, self.state, self.checks, "x" * 64)
+        self.assertEqual(result["status"], "dry-run")
+
+    def test_recover_blocks_without_sha(self):
+        with self.assertRaises(Exception) as ctx:
+            sonar_remedy.recover(self._rcfg(), self.repo, self.state, self.checks, "", execute=True)
+        self.assertEqual(type(ctx.exception).__name__, "Blocked")
+
+    def test_recover_done_when_no_issues(self):
+        import sonar_fetch
+
+        saved = os.environ.get("SONAR_TOKEN")
+        self.addCleanup(
+            lambda: (
+                os.environ.pop("SONAR_TOKEN", None)
+                if saved is None
+                else os.environ.__setitem__("SONAR_TOKEN", saved)
+            )
+        )
+        os.environ["SONAR_TOKEN"] = "fixture-token"
+        with mock.patch.object(
+            sonar_fetch,
+            "fetch",
+            return_value={
+                "status": "collected",
+                "export": self.export,
+                "issues_total": 0,
+            },
+        ):
+            result = sonar_remedy.recover(
+                self._rcfg(),
+                self.repo,
+                self.state,
+                self.checks,
+                "x" * 64,
+                execute=True,
+                identity_reader=self._identity,
+            )
+        self.assertEqual(result["status"], "done")
+
+
 class HookTests(unittest.TestCase):
     HOOK_VERSION = 1
 

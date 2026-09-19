@@ -2,6 +2,12 @@
 
 All notable changes to SonarRemedy are documented here.
 
+## [0.9.0] - 2026-09-19
+
+### Added
+
+- **`recover` loop** (`sonarremedy recover` + `sonar_remedy_recover` MCP tool) — iterates the debt-recovery cycle until done or impossible: fetch → slice → run (manual proposals) → configure → integrate → status, and on `re_scan_required` re-analyzes (publish to Sonar) and starts the next cycle. The checks sha is approved once and reused across cycles. Stops on 0 issues, no progress (everything terminal), or when the model must write proposals.
+
 ## [0.8.3] - 2026-09-19
 
 ### Fixed

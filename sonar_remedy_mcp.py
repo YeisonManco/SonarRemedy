@@ -131,6 +131,23 @@ TOOLS = [
         },
     },
     {
+        "name": "sonar_remedy_recover",
+        "description": "Loop the debt-recovery cycle until done or impossible: fetch, slice, run, configure, integrate, and re-analyze + re-fetch on re_scan_required.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "state": {"type": "string"},
+                "repo": {"type": "string"},
+                "checks": {"type": "string"},
+                "approve_checks_sha256": {"type": "string"},
+                "limit": {"type": "integer"},
+                "max_cycles": {"type": "integer"},
+                "execute": {"type": "boolean"},
+            },
+            "required": ["state", "checks", "approve_checks_sha256"],
+        },
+    },
+    {
         "name": "sonar_remedy_analyze",
         "description": "Run the local pipeline to regenerate+publish Sonar results (uses the pack's built-in script when `script` is omitted).",
         "inputSchema": {
@@ -326,6 +343,16 @@ def build_argv(name: str, arguments: dict[str, Any] | None) -> list[str]:
     if name == "sonar_remedy_detect_checks":
         return (
             g + ["detect-checks"] + _opt("--repo", a.get("repo")) + _opt("--state", a.get("state"))
+        )
+    if name == "sonar_remedy_recover":
+        return (
+            g
+            + ["recover", "--state", a["state"]]
+            + _opt("--repo", a.get("repo"))
+            + ["--checks", a["checks"], "--approve-checks-sha256", a["approve_checks_sha256"]]
+            + _opt("--limit", a.get("limit"))
+            + _opt("--max-cycles", a.get("max_cycles"))
+            + (["--execute"] if a.get("execute") else [])
         )
     if name == "sonar_remedy_analyze":
         return (

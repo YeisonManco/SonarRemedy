@@ -22,6 +22,7 @@ COMMANDS = [
     "run-all",
     "autopilot",
     "detect-checks",
+    "recover",
     "configure-project",
     "scan-suppressions",
     "scan-exclusions",
@@ -85,6 +86,25 @@ class ToolRegistryTests(unittest.TestCase):
     def test_build_argv_detect_checks(self):
         argv = mcp.build_argv("sonar_remedy_detect_checks", {"repo": "C:/r"})
         self.assertEqual(argv, ["detect-checks", "--repo", "C:/r"])
+
+    def test_build_argv_recover(self):
+        argv = mcp.build_argv(
+            "sonar_remedy_recover",
+            {"state": "C:/q", "checks": "C:/c.json", "approve_checks_sha256": "s", "execute": True},
+        )
+        self.assertEqual(
+            argv,
+            [
+                "recover",
+                "--state",
+                "C:/q",
+                "--checks",
+                "C:/c.json",
+                "--approve-checks-sha256",
+                "s",
+                "--execute",
+            ],
+        )
 
     def test_build_argv_unknown(self):
         with self.assertRaises(ValueError):

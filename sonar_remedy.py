@@ -833,6 +833,123 @@ def autopilot(
     return finished
 
 
+def recover(
+    rcfg: dict[str, Any],
+    repo: str,
+    state_base: str,
+    checks_path: str,
+    approved_sha: str,
+    branch: str = "main",
+    limit: int = 4,
+    execute: bool = False,
+    proposal_factory: Callable[..., dict[str, Any]] | None = None,
+    identity_reader: Callable[[Path], dict[str, str]] | None = None,
+    process_runner: Callable[..., dict[str, Any]] | None = None,
+    control_root: str | Path | None = None,
+    max_cycles: int = 10,
+) -> dict[str, Any]:
+    """Loop the recovery cycle until done or impossible.
+
+    Each cycle: fetch → slice → run (manual proposals) → configure → integrate →
+    status. On `re_scan_required` it re-analyzes (publish to Sonar) and starts the
+    next cycle. Stops on 0 issues, no progress (everything terminal), or the model
+    asking for proposals (`awaiting_proposals`). The model never chooses a step.
+    """
+    import debt_executor
+    import debt_queue
+    import debt_runner
+
+    if type(limit) is not int or not 1 <= limit <= 8:
+        raise debt_queue.Blocked("invalid_recover_bounds")
+    if type(max_cycles) is not int or not 1 <= max_cycles <= 100:
+        raise debt_queue.Blocked("invalid_recover_cycles")
+    repo_abs = str(debt_queue.canonical_case(repo))
+    state_abs = os.path.abspath(state_base)
+    if not execute:
+        return {
+            "status": "dry-run",
+            "repo": repo_abs,
+            "state_base": state_abs,
+            "max_cycles": max_cycles,
+            "notice": "No files or processes; use --execute to run the loop.",
+        }
+    if not approved_sha:
+        raise debt_queue.Blocked("approved_checks_sha_required")
+    checks = debt_queue.parse_json(debt_queue.read_bytes(checks_path, debt_queue.MAX_EXPORT))
+    token_env = rcfg["sonar"]["token_env"]
+    if not os.environ.get(token_env):
+        raise debt_queue.Blocked(f"{token_env} must be present in the environment")
+    project = rcfg["sonar"]["project_key"]
+    summary = {
+        "status": "done",
+        "cycles": 0,
+        "applied": 0,
+        "locally_verified": 0,
+        "deferred": 0,
+        "failed": 0,
+    }
+    for cycle in range(max_cycles):
+        output = _default_output(project)
+        fetched = sonar_fetch.fetch(build_fetch_config(rcfg, repo_abs), output)
+        if fetched.get("issues_total", 0) == 0:
+            summary["status"] = "done"
+            summary["cycles"] = cycle
+            break
+        export = fetched["export"]
+        state = os.path.join(state_abs, f"cycle-{cycle}")
+        debt_queue.slice_queue(
+            repo_abs, export, state, branch, execute=True, identity_reader=identity_reader
+        )
+        work = debt_queue.Queue(state, target=repo_abs, identity_reader=identity_reader)
+        ran = debt_runner.run(
+            work,
+            provider="manual",
+            execute=True,
+            resume=True,
+            limit=limit,
+            proposal_factory=proposal_factory,
+        )
+        if ran.get("status") == "awaiting_proposals":
+            return {
+                "status": "awaiting_proposals",
+                "state": state,
+                "cycles": cycle,
+                "waiting": ran.get("waiting", []),
+                "next_command": f"write one proposal per waiting proposal_path, then `sonarremedy recover --state {state_abs} --repo {repo_abs} --checks {checks_path} --approve-checks-sha256 {approved_sha} --execute`",
+            }
+        if ran.get("status") == "quiescent":
+            summary["cycles"] = cycle
+            summary["status"] = "impossible"
+            break
+        debt_executor.configure(work, checks, approved_sha256=approved_sha, execute=True)
+        monitor = work.monitor()
+        applied = monitor["states"].get("locally_verified", 0)
+        for state_row in ("applied", "locally_verified"):
+            summary[state_row] = summary.get(state_row, 0) + monitor["states"].get(state_row, 0)
+        summary["deferred"] += monitor["states"].get("deferred", 0)
+        summary["failed"] += monitor["states"].get("failed", 0)
+        summary["cycles"] = cycle + 1
+        if applied == 0 and monitor["states"].get("proposed", 0) == 0:
+            summary["status"] = "impossible"
+            break
+        if next_action(monitor["entry_states"]) == "re_scan_required":
+            if cycle + 1 >= max_cycles:
+                summary["status"] = "cycle_budget_exhausted"
+                break
+            _analyze_publish(rcfg, repo_abs, branch)
+            continue
+        break
+    return summary
+
+
+def _analyze_publish(rcfg: dict[str, Any], repo: str, branch: str) -> None:
+    script = os.path.join(os.path.dirname(os.path.abspath(__file__)), "sonar_compact.ps1")
+    argv = _analyze_argv(rcfg, script, repo, branch, skip_pull=True)
+    completed = subprocess.run(argv)
+    if completed.returncode != 0:
+        raise rc.ConfigError(f"analyze pipeline failed with exit {completed.returncode}")
+
+
 def next_action(states: dict[str, int]) -> str:
     """Deterministic next step from a queue's entry_states."""
     if states.get("pending", 0) > 0:
@@ -1180,6 +1297,18 @@ def main(argv: list[str] | None = None) -> int:
     autopilot_cmd.add_argument("--limit", type=int, default=4)
     autopilot_cmd.add_argument("--integrate", action="store_true")
     autopilot_cmd.add_argument("--execute", action="store_true")
+    recover_cmd = commands.add_parser(
+        "recover", help="loop the debt-recovery cycle until done or impossible"
+    )
+    recover_cmd.add_argument("--state", required=True, help="base directory for cycle queues")
+    recover_cmd.add_argument("--repo", help="local checkout (overrides repository.local_path)")
+    recover_cmd.add_argument("--checks", required=True, help="checks.json file to bind")
+    recover_cmd.add_argument(
+        "--approve-checks-sha256", required=True, help="reviewed checks sha256"
+    )
+    recover_cmd.add_argument("--limit", type=int, default=4)
+    recover_cmd.add_argument("--max-cycles", type=int, default=10)
+    recover_cmd.add_argument("--execute", action="store_true")
     detect_cmd = commands.add_parser(
         "detect-checks", help="inspect a checkout and draft its checks.json (read-only)"
     )
@@ -1609,6 +1738,23 @@ def main(argv: list[str] | None = None) -> int:
                 if result.get("status") in ("blocked", "quarantined", "reconciliation_required")
                 else 0
             )
+        if args.command == "recover":
+            repo = args.repo or (rcfg.get("repository") or {}).get("local_path")
+            if not repo:
+                raise rc.ConfigError("--repo is required, or set repository.local_path in config")
+            result = recover(
+                rcfg,
+                repo,
+                args.state,
+                args.checks,
+                args.approve_checks_sha256,
+                branch=(rcfg.get("repository") or {}).get("main_branch") or "main",
+                limit=args.limit,
+                execute=args.execute,
+                max_cycles=args.max_cycles,
+            )
+            print(json.dumps(result, sort_keys=True))
+            return 0
         return 2
     except KeyboardInterrupt:
         print(json.dumps({"status": "cancelled", "reason": "operator_cancelled"}))
