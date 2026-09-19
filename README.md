@@ -109,6 +109,7 @@ what the mechanical tools cannot: understanding the code and writing an idiomati
 | `integrate` | Serially apply a recorded proposal + run bound checks |
 | `configure` | Bind reviewed check commands + the target snapshot |
 | `scan-suppressions` | Detect Sonar-evasion directives (`certain` vs `ambiguous`) |
+| `scan-exclusions` | Detect Sonar exclusions/suppressions by language + category (17 rules) |
 | `report` | List applied fixes + the human follow-up each requires |
 | `status` | Report the queue's next action + ETA |
 | `progress` | Write a human-readable progress file |

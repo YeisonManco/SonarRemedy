@@ -2,6 +2,12 @@
 
 All notable changes to SonarRemedy are documented here.
 
+## [0.2.6] - 2026-09-18
+
+### Added
+
+- **`scan-exclusions`** (`sonar_remedy_scan_exclusions`) — detects Sonar exclusions/suppressions by language (17 rules), categorized into sonar exclusions / NOSONAR suppressions / coverage exclusions / technical exceptions, with per-project whitelist/blacklist from `.sonarremedy/rules.json`.
+
 ## [0.2.5] - 2026-09-18
 
 ### Added

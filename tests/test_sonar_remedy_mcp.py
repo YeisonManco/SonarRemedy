@@ -22,6 +22,7 @@ COMMANDS = [
     "run-all",
     "configure-project",
     "scan-suppressions",
+    "scan-exclusions",
     "report",
 ]
 
@@ -78,6 +79,12 @@ class ToolRegistryTests(unittest.TestCase):
         self.assertEqual(
             mcp.build_argv("sonar_remedy_scan_suppressions", {"repo": "C:/r"}),
             ["scan-suppressions", "--repo", "C:/r"],
+        )
+
+    def test_build_argv_scan_exclusions(self):
+        self.assertEqual(
+            mcp.build_argv("sonar_remedy_scan_exclusions", {"repo": "C:/r"}),
+            ["scan-exclusions", "--repo", "C:/r"],
         )
 
     def test_build_argv_report(self):

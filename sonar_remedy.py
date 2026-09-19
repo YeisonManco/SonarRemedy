@@ -509,6 +509,10 @@ def main(argv: list[str] | None = None) -> int:
         "scan-suppressions", help="detect code-level suppressions that may evade Sonar"
     )
     supp_cmd.add_argument("--repo", help="local checkout (overrides repository.local_path)")
+    exclusions_cmd = commands.add_parser(
+        "scan-exclusions", help="detect Sonar exclusions/suppressions by language + category"
+    )
+    exclusions_cmd.add_argument("--repo", help="local checkout (overrides repository.local_path)")
     report_cmd = commands.add_parser(
         "report", help="list applied fixes and the human follow-up each requires"
     )
@@ -650,6 +654,15 @@ def main(argv: list[str] | None = None) -> int:
             if not repo:
                 raise rc.ConfigError("--repo is required, or set repository.local_path in config")
             result = sonar_suppressions.scan(repo)
+            print(json.dumps(result, indent=2, sort_keys=True))
+            return 0
+        if args.command == "scan-exclusions":
+            import sonar_exclusions_report
+
+            repo = args.repo or (rcfg.get("repository") or {}).get("local_path")
+            if not repo:
+                raise rc.ConfigError("--repo is required, or set repository.local_path in config")
+            result = sonar_exclusions_report.scan(repo)
             print(json.dumps(result, indent=2, sort_keys=True))
             return 0
         if args.command == "fetch":

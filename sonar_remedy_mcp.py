@@ -181,6 +181,16 @@ TOOLS = [
         },
     },
     {
+        "name": "sonar_remedy_scan_exclusions",
+        "description": "Detect Sonar exclusions/suppressions by language, categorized (sonar/suppression/coverage/technical), with whitelist/blacklist from .sonarremedy/rules.json.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "repo": {"type": "string"},
+            },
+        },
+    },
+    {
         "name": "sonar_remedy_report",
         "description": "List applied fixes and the human follow-up each requires.",
         "inputSchema": {
@@ -289,6 +299,8 @@ def build_argv(name: str, arguments: dict[str, Any] | None) -> list[str]:
         )
     if name == "sonar_remedy_scan_suppressions":
         return g + ["scan-suppressions"] + _opt("--repo", a.get("repo"))
+    if name == "sonar_remedy_scan_exclusions":
+        return g + ["scan-exclusions"] + _opt("--repo", a.get("repo"))
     if name == "sonar_remedy_report":
         return g + ["report", "--state", a["state"]]
     raise ValueError(f"unknown tool: {name}")
