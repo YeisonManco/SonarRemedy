@@ -955,8 +955,9 @@ class InitCommandTests(unittest.TestCase):
             with open(os.path.join(d, ".gitignore"), encoding="utf-8") as fh:
                 gitignore = fh.read()
             self.assertIn(".sonarremedy/", gitignore)
-            self.assertIn(".github/copilot-instructions.md", gitignore)
             self.assertIn(".vscode/mcp.json", gitignore)
+            # .github/copilot-instructions.md is the user's own file — never gitignored.
+            self.assertNotIn(".github/copilot-instructions.md", gitignore)
 
     def test_init_is_idempotent(self):
         with tempfile.TemporaryDirectory() as d:

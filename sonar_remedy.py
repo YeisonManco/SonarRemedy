@@ -136,7 +136,7 @@ def _worktree_root(target: str) -> str:
     return os.path.join(os.path.dirname(absolute), os.path.basename(absolute) + "-remedy-wtrees")
 
 
-_GITIGNORE_ENTRIES = (".sonarremedy/", ".github/copilot-instructions.md", ".vscode/mcp.json")
+_GITIGNORE_ENTRIES = (".sonarremedy/", ".vscode/mcp.json")
 
 
 def _ensure_gitignore(target: str) -> list[str]:
@@ -240,6 +240,17 @@ def _doctor(repo: str | None, state: str | None, project_dir: str) -> dict[str, 
             binding = work.identity()
             if repo:
                 actual = debt_queue.git_identity(repo)
+                fixes = {
+                    "root": (
+                        "the queue is bound to a different checkout; run `run` with "
+                        f"--repo {binding['root']} (or re-slice pointing at {repo})"
+                    ),
+                    "branch": (
+                        f"check out the analyzed branch: git -C {binding['root']} "
+                        f"checkout {binding['branch']} (or re-slice with the branch you have)"
+                    ),
+                    "revision": ("the repo moved past the analyzed revision; re-run fetch + slice"),
+                }
                 for key in ("root", "branch", "revision"):
                     if actual.get(key) != binding[key]:
                         checks.append(
@@ -247,7 +258,7 @@ def _doctor(repo: str | None, state: str | None, project_dir: str) -> dict[str, 
                                 "name": f"queue_identity.{key}",
                                 "status": "error",
                                 "detail": f"expected={binding[key]!r}, actual={actual.get(key)!r}",
-                                "fix": "re-slice the queue with the matching repo/branch/revision",
+                                "fix": fixes[key],
                             }
                         )
                     else:

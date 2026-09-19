@@ -8,7 +8,7 @@ All notable changes to SonarRemedy are documented here.
 
 - **`rules` as an MCP tool** (`sonar_remedy_rules`) — the AI can list/manage the whitelist/blacklist when the user asks.
 - **`check`** — reports whether the project's SonarRemedy setup is up to date with the installed pack (`up_to_date` / `outdated` / `not_initialized`), driving the "re-run `init` after an update" flow.
-- **`doctor`** — read-only diagnostic: checks the project version and (with `--state`/`--repo`) a queue's identity (root/branch/revision) against the actual git state, reporting each mismatch with a fix suggestion. A bad `--state` (a `.json` file instead of the queue directory) now reports a clear "must be the queue directory (contains queue.sqlite3)" hint. Documented in the README with a "Diagnose" section.
+- **`doctor`** — read-only diagnostic: checks the project version and (with `--state`/`--repo`) a queue's identity (root/branch/revision) against the actual git state, reporting each mismatch with a fix suggestion. A bad `--state` (a `.json` file instead of the queue directory) now reports a clear "must be the queue directory (contains queue.sqlite3)" hint, and each identity mismatch gets the exact fix command (`git -C <root> checkout <branch>`, `run --repo <bound root>`, or re-fetch + slice). Documented in the README with a "Diagnose" section.
 
 ### Fixed
 
@@ -16,7 +16,7 @@ All notable changes to SonarRemedy are documented here.
 - **`update` reinstalls editable (`-e`)** — a non-editable reinstall moved the module to `site-packages`, breaking auto-detection on the next run; it now stays editable so the clone is always found.
 - **Fetch with zero issues** — no longer crashes with `IndexError`; writes an empty export and reports `issues_total: 0`.
 - **Missing config** — `fetch` without a configured project now reports `config not found` (a clear `ConfigError`) instead of a raw `FileNotFoundError`.
-- **`init` gitignores the local editor files** — `.github/copilot-instructions.md` and `.vscode/mcp.json` are now added to `.gitignore` (Copilot still reads them from their standard location; they just aren't pushed).
+- **`init` gitignores only the local state** — `.sonarremedy/` and `.vscode/mcp.json` (machine-specific) are added to `.gitignore`. `.github/copilot-instructions.md` is NOT gitignored: it is the user's own file (Copilot reads it from its standard location) and may already be tracked.
 - **Detailed identity mismatch** — `target_identity_mismatch` now reports WHICH field (root/branch/revision) and its expected vs actual values, so the operator (or Copilot) sees the exact discrepancy instead of a bare `Blocked`.
 - **CLI shows the real block reason** — the facade only recognized `sonar_fetch.Blocked`, so a `debt_queue.Blocked` (or `sonar_suppressions.Blocked`, etc.) reported the generic `"Blocked"` instead of the actual reason. It now recognizes every `Blocked` (by name) and reports the real message.
 
