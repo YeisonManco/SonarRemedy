@@ -14,6 +14,7 @@ All notable changes to SonarRemedy are documented here.
 - **Fetch with zero issues** — no longer crashes with `IndexError`; writes an empty export and reports `issues_total: 0`.
 - **Missing config** — `fetch` without a configured project now reports `config not found` (a clear `ConfigError`) instead of a raw `FileNotFoundError`.
 - **`init` gitignores the local editor files** — `.github/copilot-instructions.md` and `.vscode/mcp.json` are now added to `.gitignore` (Copilot still reads them from their standard location; they just aren't pushed).
+- **CLI shows the real block reason** — the facade only recognized `sonar_fetch.Blocked`, so a `debt_queue.Blocked` (or `sonar_suppressions.Blocked`, etc.) reported the generic `"Blocked"` instead of the actual reason. It now recognizes every `Blocked` (by name) and reports the real message.
 
 ### Changed
 

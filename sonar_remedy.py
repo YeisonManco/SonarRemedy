@@ -853,7 +853,10 @@ def main(argv: list[str] | None = None) -> int:
         return 130
     except Exception as error:
         secret = os.environ.get("SONAR_TOKEN", "")
-        if isinstance(error, (rc.ConfigError, sonar_fetch.Blocked)):
+        # Every module defines its own Blocked(ValueError); recognize them all by
+        # name so a debt_queue.Blocked / sonar_suppressions.Blocked / etc. reports
+        # its real reason, not the generic "Blocked".
+        if isinstance(error, rc.ConfigError) or type(error).__name__ == "Blocked":
             reason = sonar_fetch.redactor(secret)(str(error))
         else:
             reason = type(error).__name__

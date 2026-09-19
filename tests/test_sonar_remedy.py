@@ -404,6 +404,19 @@ class StatusCommandTests(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertIn('"re_scan_required"', buf.getvalue())
 
+    def test_status_invalid_state_reports_real_reason(self):
+        import debt_queue
+
+        buf = io.StringIO()
+        with mock.patch.object(
+            debt_queue, "Queue", side_effect=debt_queue.Blocked("state_must_be_outside_target")
+        ):
+            with contextlib.redirect_stdout(buf):
+                code = sonar_remedy.main(["status", "--state", "C:/q"])
+        self.assertEqual(code, 2)
+        self.assertIn("state_must_be_outside_target", buf.getvalue())
+        self.assertNotIn('"Blocked"', buf.getvalue())
+
 
 class AnalyzeCommandTests(unittest.TestCase):
     def setUp(self):
