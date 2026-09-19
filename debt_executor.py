@@ -714,10 +714,13 @@ def integrate(
                     # indict the proposal: the room is at fault, not the fix.
                     # Leave the job proposed so the same integrate retries after
                     # the environment is repaired (deferring would strand it).
+                    # Clear the barrier too: the re-raise would otherwise leave
+                    # an orphaned active.json that blocks the next integrate.
                     environment = {
                         "configured_build_failed": "baseline_build_failed",
                         "configured_check_process_failed": "baseline_check_process_failed",
                     }
+                    barrier.finish()
                     raise q.Blocked(
                         environment.get(reason, "baseline_environment_failed")
                     ) from error
@@ -774,7 +777,12 @@ def parse_trx(
         failures, seen = {}, set()
         for result in results:
             name, outcome = result.attrib["testName"], result.attrib["outcome"]
-            if not name or len(name) > 500 or name in seen or outcome not in ("Passed", "Failed"):
+            if not name or len(name) > 500 or outcome not in ("Passed", "Failed"):
+                raise ValueError()
+            if name in seen and expected_red is not None:
+                # red-first maps test-name -> assertion-marker, so names must be
+                # unique there. Characterization (green baseline) tolerates
+                # duplicate test names (overloaded/parameterized tests).
                 raise ValueError()
             seen.add(name)
             if outcome == "Failed":

@@ -253,6 +253,10 @@ class ExecutorTests(QueueFixture):
         self.assertEqual(data["exit_code"], 1)
         self.assertIn("MSB3021", data["stdout_tail"])
         self.assertEqual(data["name"], "build")
+        # The barrier must be cleared: a re-raise would otherwise leave an
+        # orphaned active.json that blocks the next integrate.
+        barrier = self.control / q.digest(str(self.target).casefold().encode())
+        self.assertFalse((barrier / "active.json").exists())
 
     def test_failed_integrated_check_quarantines_and_preserves_preimages(self):
         self.configure()
@@ -329,6 +333,21 @@ class ExecutorTests(QueueFixture):
         self.assertIsNotNone(
             e.parse_trx(report, 0, 1, {"Behavior.Value": "Assert.Equal() Failure"})
         )
+
+    def test_trx_duplicate_test_names_ok_for_characterization(self):
+        report = self.home / "dup.trx"
+        dup = (
+            "<TestRun><Results>"
+            '<UnitTestResult testName="Behavior.Value" outcome="Passed" />'
+            '<UnitTestResult testName="Behavior.Value" outcome="Passed" />'
+            "</Results>"
+            '<ResultSummary outcome="Completed">'
+            '<Counters total="2" executed="2" passed="2" failed="0" notExecuted="0" />'
+            "</ResultSummary></TestRun>"
+        )
+        report.write_text(dup)
+        # characterization (no expected_red) tolerates duplicate test names
+        self.assertIsNotNone(e.parse_trx(report, 0, 0))
 
     def test_retained_verification_cannot_disappear_without_blocking(self):
         self.configure()

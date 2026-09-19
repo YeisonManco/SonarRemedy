@@ -2,6 +2,13 @@
 
 All notable changes to SonarRemedy are documented here.
 
+## [0.7.3] - 2026-09-19
+
+### Fixed
+
+- **Characterization baseline rejected green TRX with duplicate test names** — `parse_trx` required unique `testName`s for every policy, but overloaded/parameterized tests legitimately share a name, so a passing baseline (`150/150`, 0 failures) was rejected with `trx_counters_outcomes_or_assertion_provenance_invalid` (surfacing as `baseline_environment_failed`). The uniqueness requirement now applies only to `red-first` (where test-name → assertion-marker must be exact); characterization tolerates duplicates.
+- **Baseline failure left an orphaned barrier** — the baseline re-raise skipped `barrier.finish()`, leaving an `active.json` that blocked the next integrate. It now clears the barrier before re-raising.
+
 ## [0.7.2] - 2026-09-19
 
 ### Fixed
