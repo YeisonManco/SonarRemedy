@@ -636,3 +636,12 @@ class LifecycleTests(QueueFixture):
                     ),
                 )
         self.assertFalse(self.state.exists())
+
+    def test_check_identity_reports_which_field_mismatched(self):
+        binding = {"root": str(self.target), "branch": "feature/queue", "revision": REVISION}
+
+        def reader(root):
+            return {"root": str(root), "branch": "other", "revision": REVISION}
+
+        with self.assertRaisesRegex(q.Blocked, r"branch: expected='feature/queue', actual='other'"):
+            q.check_identity(binding, reader)

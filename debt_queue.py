@@ -186,7 +186,12 @@ def check_identity(binding: dict[str, str], reader: Callable[[Path], dict[str, s
     actual = reader(local_path(binding["root"], exists=True))
     expected = {k: binding[k] for k in ("root", "branch", "revision")}
     if actual != expected:
-        raise Blocked("target_identity_mismatch")
+        detail = "; ".join(
+            f"{key}: expected={expected[key]!r}, actual={actual.get(key)!r}"
+            for key in ("root", "branch", "revision")
+            if actual.get(key) != expected[key]
+        )
+        raise Blocked("target_identity_mismatch (" + detail + ")")
 
 
 def plan(
@@ -481,10 +486,22 @@ class Queue:
             binding = parse_json(meta["binding"])
             root = local_path(binding["root"])
             state_path(self.state, root)
-            if (self.target is not None and local_path(self.target) != root) or (
-                self.branch is not None and self.branch != binding["branch"]
-            ):
-                raise Blocked("target_identity_mismatch")
+            if self.target is not None and local_path(self.target) != root:
+                raise Blocked(
+                    "target_identity_mismatch (root: expected="
+                    + repr(str(root))
+                    + ", actual="
+                    + repr(str(local_path(self.target)))
+                    + ")"
+                )
+            if self.branch is not None and self.branch != binding["branch"]:
+                raise Blocked(
+                    "target_identity_mismatch (branch: expected="
+                    + repr(binding["branch"])
+                    + ", actual="
+                    + repr(self.branch)
+                    + ")"
+                )
             self._integrity(connection)
             if identity:
                 if meta["quarantined"] == "true":
