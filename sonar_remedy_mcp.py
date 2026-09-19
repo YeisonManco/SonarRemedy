@@ -191,6 +191,18 @@ TOOLS = [
         },
     },
     {
+        "name": "sonar_remedy_rules",
+        "description": "Manage the exclusion whitelist/blacklist: list, allow (whitelist), block (blacklist), remove.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "action": {"type": "string", "enum": ["list", "allow", "block", "remove"]},
+                "rule": {"type": "string"},
+            },
+            "required": ["action"],
+        },
+    },
+    {
         "name": "sonar_remedy_report",
         "description": "List applied fixes and the human follow-up each requires.",
         "inputSchema": {
@@ -301,6 +313,11 @@ def build_argv(name: str, arguments: dict[str, Any] | None) -> list[str]:
         return g + ["scan-suppressions"] + _opt("--repo", a.get("repo"))
     if name == "sonar_remedy_scan_exclusions":
         return g + ["scan-exclusions"] + _opt("--repo", a.get("repo"))
+    if name == "sonar_remedy_rules":
+        argv = g + ["rules", a["action"]]
+        if a.get("rule"):
+            argv.append(a["rule"])
+        return argv
     if name == "sonar_remedy_report":
         return g + ["report", "--state", a["state"]]
     raise ValueError(f"unknown tool: {name}")

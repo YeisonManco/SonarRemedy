@@ -46,7 +46,10 @@ When the user asks about technical debt, Sonar issues, "deuda técnica", or "rec
    `sonar_remedy_scan_exclusions`. It reports each finding with its rule, category,
    and severity (HIGH/MEDIUM/LOW = the danger level). This is a SEPARATE, optional
    scan; do NOT run the full fetch/slice pipeline for it. For suppressions only
-   (certain vs ambiguous) use `sonar_remedy_scan_suppressions`.
+   (certain vs ambiguous) use `sonar_remedy_scan_suppressions`. To view or edit the
+   project's whitelist/blacklist use `sonar_remedy_rules`
+   (`list` / `allow` / `block` / `remove`); only `allow`/`block` when the USER
+   explicitly asks — the whitelist is a human decision, never auto-accept one.
 
 9. **Exclusion correction is NOT automatic.** Unlike code smells (which the
    proposal workers fix), an exclusion/suppression may be LEGITIMATE (a justified

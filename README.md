@@ -185,7 +185,7 @@ It should reply with `"serverInfo":{"name":"sonar-remedy"...}`. In VS Code, the 
 1. Copy `host-agents/vscode-mcp.json` to the project's `.vscode/mcp.json` (adjust the `args` path).
 2. Copy `host-agents/copilot-instructions.md` to `.github/copilot-instructions.md`.
 
-The MCP server exposes every command as a tool: `sonar_remedy_fetch`, `sonar_remedy_slice`, `sonar_remedy_run`, `sonar_remedy_status`, `sonar_remedy_progress`, `sonar_remedy_schedule`, `sonar_remedy_analyze`, `sonar_remedy_run_all`, `sonar_remedy_configure_project`, `sonar_remedy_scan_suppressions`, …
+The MCP server exposes every command as a tool: `sonar_remedy_fetch`, `sonar_remedy_slice`, `sonar_remedy_run`, `sonar_remedy_status`, `sonar_remedy_progress`, `sonar_remedy_schedule`, `sonar_remedy_analyze`, `sonar_remedy_run_all`, `sonar_remedy_configure_project`, `sonar_remedy_scan_suppressions`, `sonar_remedy_scan_exclusions`, `sonar_remedy_rules`, `sonar_remedy_report`, …
 
 ## Safety boundaries
 
