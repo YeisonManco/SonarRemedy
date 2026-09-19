@@ -129,14 +129,16 @@ what the mechanical tools cannot: understanding the code and writing an idiomati
 `doctor` reports what is wrong and how to fix it — use it before guessing:
 
 ```powershell
-sonarremedy doctor                          # project version + setup
-sonarremedy doctor --state <queue> --repo <path>
-# → compares the queue's bound identity (root/branch/revision) with the actual
-#   git state and reports each mismatch with a fix suggestion.
+sonarremedy doctor                                 # project version + setup
+sonarremedy doctor --state <queue> --repo <path>   # compare the queue's identity
+sonarremedy doctor --fix                            # apply the safe repairs
 ```
 
-`--state` is the **queue directory** created by `slice` (it contains `queue.sqlite3`),
-not an export `.json` file.
+- `--state` is the **queue directory** created by `slice` (it contains `queue.sqlite3`), not an export `.json` file.
+- Each identity mismatch reports the **exact fix command**: `git -C <root> checkout <branch>` (branch), `run --repo <bound root>` (root), or re-fetch + re-slice (revision).
+- `--fix` applies only the **safe repairs** — it re-runs `init` when the project's recorded version is behind the pack (and re-writes the pointer + version marker). It **never** touches a queue or the git state.
+
+> **One worktree per branch.** Slicing binds the queue to the checkout you passed. On a multi-worktree repo, always use the SAME `--repo` path across `fetch` → `slice` → `run`, or you will hit `target_identity_mismatch`.
 
 ## Quick start
 

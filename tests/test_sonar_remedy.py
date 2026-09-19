@@ -944,6 +944,19 @@ class InitCommandTests(unittest.TestCase):
             self.assertIn("version", output)
             self.assertIn("not initialized", output)
 
+    def test_doctor_fix_reinitializes_outdated_project(self):
+        with tempfile.TemporaryDirectory() as d:
+            os.makedirs(os.path.join(d, ".sonarremedy"), exist_ok=True)
+            version_file = os.path.join(d, ".sonarremedy", "version.json")
+            with open(version_file, "w", encoding="utf-8") as fh:
+                fh.write('{"version": "0.0.1"}\n')
+            with contextlib.redirect_stdout(io.StringIO()) as buf:
+                code = sonar_remedy.main(["doctor", "--fix", "--dir", d])
+            self.assertEqual(code, 0)
+            self.assertIn("re-ran init", buf.getvalue())
+            with open(version_file, encoding="utf-8") as fh:
+                self.assertIn(sonar_remedy.__version__, fh.read())
+
     def test_init_creates_sonarremedy_dir_and_rules(self):
         with tempfile.TemporaryDirectory() as d:
             with contextlib.redirect_stdout(io.StringIO()):

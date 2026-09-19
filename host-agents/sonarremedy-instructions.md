@@ -62,6 +62,16 @@ NEVER answer "there are no exclusions" from `rules` alone — run `sonar_remedy_
 
 Unlike code smells (which the proposal workers fix), an exclusion/suppression may be LEGITIMATE (a justified `@ts-ignore`, `NoWarn`, or coverage exclusion). NEVER auto-fix or auto-remove them. Report them (rule, file, line, severity) and let a HUMAN decide whether to remove or justify each one.
 
+## 10. When something looks wrong, run `doctor` — do not guess
+
+If a command returns a `blocked` reason you do not understand, or the setup looks off (an outdated version, a `target_identity_mismatch`, a `missing_path`):
+
+1. Call `sonar_remedy_doctor` (optionally with `state` and `repo`). It reports what is wrong and the EXACT fix command for each mismatch (which of root / branch / revision differs, and what to run).
+2. For a safe setup repair, call it with `fix: true` — it re-runs `init` when the project setup is behind the pack. It never touches a queue or the git state.
+3. Report the diagnosis and the suggested command to the human. Do NOT invent a fix, do NOT do the work manually, and do NOT invent a state path: `state` is the QUEUE **directory** created by `slice` (it contains `queue.sqlite3`), not an export `.json` file.
+
+A `target_identity_mismatch` is the pack's fail-closed safety, not a bug: the queue is bound to one checkout/branch/revision. Always use the SAME `--repo` path across `fetch` → `slice` → `run` (one worktree per branch).
+
 ## Personality (response style)
 
 The user may pick a response style (e.g. "con personalidad gracioso"). Default: `intelectual`.

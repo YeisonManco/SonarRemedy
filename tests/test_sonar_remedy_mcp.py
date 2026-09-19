@@ -25,6 +25,7 @@ COMMANDS = [
     "scan-exclusions",
     "rules",
     "report",
+    "doctor",
 ]
 
 
@@ -101,6 +102,13 @@ class ToolRegistryTests(unittest.TestCase):
         self.assertEqual(
             mcp.build_argv("sonar_remedy_report", {"state": "C:/q"}),
             ["report", "--state", "C:/q"],
+        )
+
+    def test_build_argv_doctor(self):
+        self.assertEqual(mcp.build_argv("sonar_remedy_doctor", {}), ["doctor"])
+        self.assertEqual(
+            mcp.build_argv("sonar_remedy_doctor", {"state": "C:/q", "repo": "C:/r", "fix": True}),
+            ["doctor", "--state", "C:/q", "--repo", "C:/r", "--fix"],
         )
 
     def test_call_tool_returns_output(self):

@@ -206,8 +206,14 @@ def _check(target: str) -> dict[str, Any]:
     return {"status": "up_to_date", "version": __version__}
 
 
-def _doctor(repo: str | None, state: str | None, project_dir: str) -> dict[str, Any]:
-    """Diagnose the setup + a queue's identity; return per-check status and fixes."""
+def _doctor(
+    repo: str | None, state: str | None, project_dir: str, *, fix: bool = False
+) -> dict[str, Any]:
+    """Diagnose the setup + a queue's identity; return per-check status and fixes.
+
+    With ``fix=True`` it also applies the SAFE repairs (re-run ``init`` when the
+    project's recorded version is behind the pack) and reports them.
+    """
     checks: list[dict[str, Any]] = []
 
     previous = _read_pack_version(project_dir)
@@ -291,6 +297,30 @@ def _doctor(repo: str | None, state: str | None, project_dir: str) -> dict[str, 
                         "(it contains queue.sqlite3), not an export .json file"
                     ),
                 }
+            )
+
+    # Safe repairs: re-run init when the project setup is behind/absent. This
+    # rewrites .sonarremedy/ (rules.json kept, version marker, gitignore, the
+    # Copilot pointer) idempotently. It never touches a queue or the git state.
+    if fix:
+        version_bad = any(c["name"] == "version" and c["status"] == "warning" for c in checks)
+        if version_bad:
+            _write_init_files(project_dir)
+            _init_sonarremedy_dir(project_dir)
+            for check in checks:
+                if check["name"] == "version":
+                    check["status"] = "ok"
+                    check["detail"] = __version__
+            checks.append(
+                {
+                    "name": "fix",
+                    "status": "ok",
+                    "detail": f"re-ran init; project setup is now at {__version__}",
+                }
+            )
+        else:
+            checks.append(
+                {"name": "fix", "status": "info", "detail": "nothing safe to fix automatically"}
             )
 
     issues = [c for c in checks if c["status"] == "error"]
@@ -720,6 +750,9 @@ def main(argv: list[str] | None = None) -> int:
     doctor_cmd.add_argument("--dir", help="target project directory (default: current)")
     doctor_cmd.add_argument("--state", help="queue directory to diagnose")
     doctor_cmd.add_argument("--repo", help="local checkout to compare against the queue binding")
+    doctor_cmd.add_argument(
+        "--fix", action="store_true", help="apply the safe repairs (re-run init if outdated)"
+    )
     rules_cmd = commands.add_parser("rules", help="manage exclusion rules (whitelist/blacklist)")
     rules_cmd.add_argument("--dir", help="target project directory (default: current)")
     rules_cmd.add_argument(
@@ -877,7 +910,7 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         if args.command == "doctor":
             target = os.path.abspath(args.dir or os.getcwd())
-            print(json.dumps(_doctor(args.repo, args.state, target), sort_keys=True))
+            print(json.dumps(_doctor(args.repo, args.state, target, fix=args.fix), sort_keys=True))
             return 0
         if args.command == "rules":
             import sonar_exclusions_report as report

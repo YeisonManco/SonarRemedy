@@ -203,6 +203,18 @@ TOOLS = [
         },
     },
     {
+        "name": "sonar_remedy_doctor",
+        "description": "Diagnose the SonarRemedy setup and a queue's identity (root/branch/revision), reporting each mismatch with the exact fix command. With fix=true it also applies the SAFE repairs (re-run init if the project setup is outdated). Use this whenever a command fails with a blocked reason you do not understand.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "state": {"type": "string"},
+                "repo": {"type": "string"},
+                "fix": {"type": "boolean"},
+            },
+        },
+    },
+    {
         "name": "sonar_remedy_report",
         "description": "List applied fixes and the human follow-up each requires.",
         "inputSchema": {
@@ -317,6 +329,13 @@ def build_argv(name: str, arguments: dict[str, Any] | None) -> list[str]:
         argv = g + ["rules", a["action"]]
         if a.get("rule"):
             argv.append(a["rule"])
+        return argv
+    if name == "sonar_remedy_doctor":
+        argv = g + ["doctor"]
+        argv += _opt("--state", a.get("state"))
+        argv += _opt("--repo", a.get("repo"))
+        if a.get("fix"):
+            argv.append("--fix")
         return argv
     if name == "sonar_remedy_report":
         return g + ["report", "--state", a["state"]]
