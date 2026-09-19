@@ -2,6 +2,12 @@
 
 All notable changes to SonarRemedy are documented here.
 
+## [0.3.1] - 2026-09-19
+
+### Fixed
+
+- **Worktree init detection** — `check` and `doctor` now verify the init-written files (`.vscode/mcp.json`, `.github/copilot-instructions.md` with the SonarRemedy section, `.github/sonarremedy-instructions.md`), not just `.sonarremedy/version.json`. A fresh worktree from `HEAD` (no uncommitted instructions, no gitignored `.sonarremedy/`) reports `not_initialized` / `init_files` with the exact fix `sonarremedy init --dir <worktree>` instead of a silent `up_to_date`. `doctor --fix` recreates the missing files idempotently (user instructions merged, `rules.json` kept). No commit/push of instructions required. Documented in README (one worktree per branch + init per worktree).
+
 ## [0.3.0] - 2026-09-18
 
 ### Added

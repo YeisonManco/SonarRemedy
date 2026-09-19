@@ -959,6 +959,52 @@ class InitCommandTests(unittest.TestCase):
             with open(version_file, encoding="utf-8") as fh:
                 self.assertIn(sonar_remedy.__version__, fh.read())
 
+    def test_check_reports_not_initialized_when_init_files_missing(self):
+        with tempfile.TemporaryDirectory() as d:
+            with contextlib.redirect_stdout(io.StringIO()):
+                sonar_remedy.main(["init", "--dir", d])
+            os.remove(os.path.join(d, ".github", "copilot-instructions.md"))
+            with contextlib.redirect_stdout(io.StringIO()) as buf:
+                code = sonar_remedy.main(["check", "--dir", d])
+            self.assertEqual(code, 0)
+            self.assertIn("not_initialized", buf.getvalue())
+            self.assertIn("copilot-instructions.md", buf.getvalue())
+
+    def test_doctor_reports_missing_init_files(self):
+        with tempfile.TemporaryDirectory() as d:
+            with contextlib.redirect_stdout(io.StringIO()):
+                sonar_remedy.main(["init", "--dir", d])
+            os.remove(os.path.join(d, ".vscode", "mcp.json"))
+            os.remove(os.path.join(d, ".github", "sonarremedy-instructions.md"))
+            with contextlib.redirect_stdout(io.StringIO()) as buf:
+                code = sonar_remedy.main(["doctor", "--dir", d])
+            self.assertEqual(code, 0)
+            output = buf.getvalue()
+            self.assertIn("init_files", output)
+            self.assertIn("init", output)
+
+    def test_doctor_fix_recreates_missing_init_files(self):
+        with tempfile.TemporaryDirectory() as d:
+            with contextlib.redirect_stdout(io.StringIO()):
+                sonar_remedy.main(["init", "--dir", d])
+            rules = os.path.join(d, ".sonarremedy", "rules.json")
+            with open(rules, "w", encoding="utf-8") as fh:
+                fh.write('{"whitelist": ["WORKTREE.KEEP"], "blacklist": []}\n')
+            os.remove(os.path.join(d, ".github", "copilot-instructions.md"))
+            os.remove(os.path.join(d, ".github", "sonarremedy-instructions.md"))
+            os.remove(os.path.join(d, ".vscode", "mcp.json"))
+            with contextlib.redirect_stdout(io.StringIO()) as buf:
+                code = sonar_remedy.main(["doctor", "--fix", "--dir", d])
+            self.assertEqual(code, 0)
+            self.assertIn("re-ran init", buf.getvalue())
+            self.assertTrue(os.path.isfile(os.path.join(d, ".github", "copilot-instructions.md")))
+            self.assertTrue(
+                os.path.isfile(os.path.join(d, ".github", "sonarremedy-instructions.md"))
+            )
+            self.assertTrue(os.path.isfile(os.path.join(d, ".vscode", "mcp.json")))
+            with open(rules, encoding="utf-8") as fh:
+                self.assertIn("WORKTREE.KEEP", fh.read())
+
     def test_init_creates_sonarremedy_dir_and_rules(self):
         with tempfile.TemporaryDirectory() as d:
             with contextlib.redirect_stdout(io.StringIO()):

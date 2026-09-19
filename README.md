@@ -136,9 +136,11 @@ sonarremedy doctor --fix                            # apply the safe repairs
 
 - `--state` is the **queue directory** created by `slice` (it contains `queue.sqlite3`), not an export `.json` file.
 - Each identity mismatch reports the **exact fix command**: `git -C <root> checkout <branch>` (branch), `run --repo <bound root>` (root), or re-fetch + re-slice (revision).
-- `--fix` applies only the **safe repairs** — it re-runs `init` when the project's recorded version is behind the pack (and re-writes the pointer + version marker). It **never** touches a queue or the git state.
+- `--fix` applies only the **safe repairs** — it re-runs `init` when the project's recorded version is behind the pack or init files are missing (and re-writes the pointer + version marker). It **never** touches a queue or the git state.
 
 > **One worktree per branch.** Slicing binds the queue to the checkout you passed. On a multi-worktree repo, always use the SAME `--repo` path across `fetch` → `slice` → `run`, or you will hit `target_identity_mismatch`.
+>
+> **Init per worktree.** A new worktree comes from `HEAD`, so it does NOT inherit the uncommitted `.github/` instructions, `.vscode/mcp.json`, or the gitignored `.sonarremedy/` setup — and you do NOT need to commit them. After `git worktree add`, run `sonarremedy init --dir <worktree>` (idempotent, merges your instructions) and verify with `sonarremedy doctor --dir <worktree>`; if files are missing, `doctor --fix --dir <worktree>` recreates them.
 
 ## Quick start
 

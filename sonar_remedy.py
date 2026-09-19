@@ -190,6 +190,29 @@ def _track_version(target: str) -> dict[str, Any]:
     }
 
 
+def _missing_init_files(target: str) -> list[str]:
+    """List init-written files absent in target (worktree-safe check)."""
+    base = os.path.abspath(target)
+    missing: list[str] = []
+    candidates = [
+        os.path.join(".vscode", "mcp.json"),
+        os.path.join(".github", "sonarremedy-instructions.md"),
+    ]
+    for rel in candidates:
+        if not os.path.isfile(os.path.join(base, rel)):
+            missing.append(rel.replace(os.sep, "/"))
+    pointer_rel = os.path.join(".github", "copilot-instructions.md")
+    pointer_abs = os.path.join(base, pointer_rel)
+    try:
+        with open(pointer_abs, encoding="utf-8") as handle:
+            pointer_content = handle.read()
+    except OSError:
+        pointer_content = ""
+    if INSTR_SECTION_START not in pointer_content:
+        missing.append(pointer_rel.replace(os.sep, "/"))
+    return missing
+
+
 def _check(target: str) -> dict[str, Any]:
     """Compare the project's recorded pack version with the installed one."""
     previous = _read_pack_version(target)
@@ -206,6 +229,14 @@ def _check(target: str) -> dict[str, Any]:
             "current": __version__,
             "hint": "SonarRemedy was updated; run `sonarremedy init` from the project root",
         }
+    missing = _missing_init_files(target)
+    if missing:
+        return {
+            "status": "not_initialized",
+            "current": __version__,
+            "missing": missing,
+            "hint": f"run `sonarremedy init --dir {os.path.abspath(target)}`",
+        }
     return {"status": "up_to_date", "version": __version__}
 
 
@@ -215,7 +246,8 @@ def _doctor(
     """Diagnose the setup + a queue's identity; return per-check status and fixes.
 
     With ``fix=True`` it also applies the SAFE repairs (re-run ``init`` when the
-    project's recorded version is behind the pack) and reports them.
+    project's recorded version is behind the pack or init files are missing)
+    and reports them.
     """
     checks: list[dict[str, Any]] = []
 
@@ -240,6 +272,17 @@ def _doctor(
         )
     else:
         checks.append({"name": "version", "status": "ok", "detail": __version__})
+
+    missing = _missing_init_files(project_dir)
+    if missing:
+        checks.append(
+            {
+                "name": "init_files",
+                "status": "warning",
+                "detail": f"missing: {', '.join(missing)}",
+                "fix": f"run `sonarremedy init --dir {os.path.abspath(project_dir)}`",
+            }
+        )
 
     if state:
         import debt_queue
@@ -306,14 +349,24 @@ def _doctor(
     # rewrites .sonarremedy/ (rules.json kept, version marker, gitignore, the
     # Copilot pointer) idempotently. It never touches a queue or the git state.
     if fix:
-        version_bad = any(c["name"] == "version" and c["status"] == "warning" for c in checks)
-        if version_bad:
+        setup_bad = any(
+            c["name"] in ("version", "init_files") and c["status"] == "warning" for c in checks
+        )
+        if setup_bad:
             _write_init_files(project_dir)
             _init_sonarremedy_dir(project_dir)
             for check in checks:
                 if check["name"] == "version":
                     check["status"] = "ok"
                     check["detail"] = __version__
+            remaining = _missing_init_files(project_dir)
+            for check in checks:
+                if check["name"] == "init_files":
+                    if not remaining:
+                        check["status"] = "ok"
+                        check["detail"] = "init files present"
+                    else:
+                        check["detail"] = f"missing: {', '.join(remaining)}"
             checks.append(
                 {
                     "name": "fix",
@@ -754,7 +807,9 @@ def main(argv: list[str] | None = None) -> int:
     doctor_cmd.add_argument("--state", help="queue directory to diagnose")
     doctor_cmd.add_argument("--repo", help="local checkout to compare against the queue binding")
     doctor_cmd.add_argument(
-        "--fix", action="store_true", help="apply the safe repairs (re-run init if outdated)"
+        "--fix",
+        action="store_true",
+        help="apply the safe repairs (re-run init if outdated or init files are missing)",
     )
     rules_cmd = commands.add_parser("rules", help="manage exclusion rules (whitelist/blacklist)")
     rules_cmd.add_argument("--dir", help="target project directory (default: current)")

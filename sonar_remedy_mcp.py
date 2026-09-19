@@ -204,7 +204,7 @@ TOOLS = [
     },
     {
         "name": "sonar_remedy_doctor",
-        "description": "Diagnose the SonarRemedy setup and a queue's identity (root/branch/revision), reporting each mismatch with the exact fix command. With fix=true it also applies the SAFE repairs (re-run init if the project setup is outdated). Use this whenever a command fails with a blocked reason you do not understand.",
+        "description": "Diagnose the SonarRemedy setup and a queue's identity (root/branch/revision), reporting each mismatch with the exact fix command. With fix=true it also applies the SAFE repairs (re-run init if the project setup is outdated or init files are missing). Use this whenever a command fails with a blocked reason you do not understand.",
         "inputSchema": {
             "type": "object",
             "properties": {
