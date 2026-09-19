@@ -24,8 +24,13 @@ class ContractTests(unittest.TestCase):
                 self.assertNotIn("auto-commit per", text)
 
     def test_bridges_and_hosts_are_templates_not_direct_edit_workers(self):
+        # Copilot instruction files are a different kind (pointers/instructions),
+        # not the worker/proposal templates this contract checks.
+        skip = {"copilot-instructions.md", "sonarremedy-instructions.md"}
         for folder in ("host-agents", "bridges"):
             for path in (PACK / folder).glob("*.md"):
+                if path.name in skip:
+                    continue
                 text = path.read_text(encoding="utf-8").lower()
                 with self.subTest(path=path.name):
                     self.assertIn("template", text)

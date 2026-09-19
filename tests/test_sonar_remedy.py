@@ -874,8 +874,10 @@ class InitCommandTests(unittest.TestCase):
             self.assertEqual(code, 0)
             mcp_path = os.path.join(d, ".vscode", "mcp.json")
             instr_path = os.path.join(d, ".github", "copilot-instructions.md")
+            full_path = os.path.join(d, ".sonarremedy", "instructions.md")
             self.assertTrue(os.path.isfile(mcp_path))
             self.assertTrue(os.path.isfile(instr_path))
+            self.assertTrue(os.path.isfile(full_path))
             with open(mcp_path, encoding="utf-8") as fh:
                 mcp_content = fh.read()
             self.assertIn("sonar-remedy", mcp_content)
@@ -883,6 +885,42 @@ class InitCommandTests(unittest.TestCase):
             with open(instr_path, encoding="utf-8") as fh:
                 instr_content = fh.read()
             self.assertIn("sonar_remedy_", instr_content)
+            self.assertIn("instructions.md", instr_content)  # the slim pointer
+            with open(full_path, encoding="utf-8") as fh:
+                full_content = fh.read()
+            self.assertIn("Always use SonarRemedy", full_content)
+
+    def test_init_preserves_existing_copilot_instructions(self):
+        with tempfile.TemporaryDirectory() as d:
+            os.makedirs(os.path.join(d, ".github"), exist_ok=True)
+            user_content = "# My team rules\n\n- Always use tabs\n- No console.log\n"
+            instructions = os.path.join(d, ".github", "copilot-instructions.md")
+            with open(instructions, "w", encoding="utf-8") as fh:
+                fh.write(user_content)
+            with contextlib.redirect_stdout(io.StringIO()):
+                sonar_remedy.main(["init", "--dir", d])
+            with open(instructions, encoding="utf-8") as fh:
+                content = fh.read()
+            self.assertIn("My team rules", content)
+            self.assertIn("Always use tabs", content)
+            self.assertIn("SonarRemedy:start", content)
+            self.assertIn("sonar_remedy_", content)
+            # Re-init replaces only our section, never duplicates or destroys user content.
+            with contextlib.redirect_stdout(io.StringIO()):
+                sonar_remedy.main(["init", "--dir", d])
+            with open(instructions, encoding="utf-8") as fh:
+                content = fh.read()
+            self.assertIn("My team rules", content)
+            self.assertEqual(content.count("SonarRemedy:start"), 1)
+
+    def test_init_writes_version_marker(self):
+        with tempfile.TemporaryDirectory() as d:
+            with contextlib.redirect_stdout(io.StringIO()):
+                sonar_remedy.main(["init", "--dir", d])
+            version_file = os.path.join(d, ".sonarremedy", "version.json")
+            self.assertTrue(os.path.isfile(version_file))
+            with open(version_file, encoding="utf-8") as fh:
+                self.assertIn("version", fh.read())
 
     def test_init_creates_sonarremedy_dir_and_rules(self):
         with tempfile.TemporaryDirectory() as d:

@@ -3,6 +3,7 @@
 import argparse
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -47,8 +48,37 @@ def _load_config(args: argparse.Namespace) -> dict[str, Any]:
     return rc.load(rc.default_config_path())
 
 
-def _write_init_files(target: str) -> tuple[str, str]:
-    """Write .vscode/mcp.json + the Copilot instruction into a project."""
+INSTR_SECTION_START = "<!-- SonarRemedy:start -->"
+INSTR_SECTION_END = "<!-- SonarRemedy:end -->"
+
+
+def _merge_copilot_instructions(target: str, section: str) -> str:
+    """Merge the SonarRemedy section into the existing copilot-instructions.
+
+    Preserves the user's own content and only REPLACES our delimited section
+    (between the start/end markers) on re-init.
+    """
+    path = os.path.join(os.path.abspath(target), ".github", "copilot-instructions.md")
+    existing = ""
+    if os.path.isfile(path):
+        with open(path, encoding="utf-8") as handle:
+            existing = handle.read()
+    pattern = re.compile(
+        re.escape(INSTR_SECTION_START) + r".*?" + re.escape(INSTR_SECTION_END) + r"\n?",
+        re.DOTALL,
+    )
+    existing = pattern.sub("", existing).strip()
+    merged = INSTR_SECTION_START + "\n" + section.strip() + "\n" + INSTR_SECTION_END
+    if existing:
+        merged = existing + "\n\n" + merged
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8") as handle:
+        handle.write(merged + "\n")
+    return path
+
+
+def _write_init_files(target: str) -> tuple[str, str, str]:
+    """Write .vscode/mcp.json + the Copilot pointer + the full instructions."""
     pack = os.path.dirname(os.path.abspath(__file__))
     vscode_dir = os.path.join(target, ".vscode")
     os.makedirs(vscode_dir, exist_ok=True)
@@ -65,21 +95,35 @@ def _write_init_files(target: str) -> tuple[str, str]:
     with open(mcp_path, "w", encoding="utf-8") as handle:
         json.dump(mcp_config, handle, indent=2)
 
-    github_dir = os.path.join(target, ".github")
-    os.makedirs(github_dir, exist_ok=True)
-    instructions_path = os.path.join(github_dir, "copilot-instructions.md")
-    source = os.path.join(pack, "host-agents", "copilot-instructions.md")
-    if os.path.isfile(source):
-        with open(source, encoding="utf-8") as handle:
-            content = handle.read()
+    def _copy(source_name: str, dest_path: str, fallback: str) -> str:
+        source = os.path.join(pack, "host-agents", source_name)
+        if os.path.isfile(source):
+            with open(source, encoding="utf-8") as handle:
+                content = handle.read()
+        else:
+            content = fallback
+        os.makedirs(os.path.dirname(dest_path), exist_ok=True)
+        with open(dest_path, "w", encoding="utf-8") as handle:
+            handle.write(content)
+        return dest_path
+
+    pointer_source = os.path.join(pack, "host-agents", "copilot-instructions.md")
+    if os.path.isfile(pointer_source):
+        with open(pointer_source, encoding="utf-8") as handle:
+            pointer_section = handle.read()
     else:
-        content = (
-            "# Technical debt → SonarRemedy\n\n"
-            "Use the `sonar_remedy_*` MCP tools to recover Sonar debt.\n"
+        pointer_section = (
+            "# SonarRemedy\n\n"
+            "Use the `sonar_remedy_*` MCP tools; read `.sonarremedy/instructions.md`.\n"
         )
-    with open(instructions_path, "w", encoding="utf-8") as handle:
-        handle.write(content)
-    return mcp_path, instructions_path
+    # Merge (preserve the user's own instructions) rather than overwrite.
+    pointer_path = _merge_copilot_instructions(target, pointer_section)
+    full_path = _copy(
+        "sonarremedy-instructions.md",
+        os.path.join(target, ".sonarremedy", "instructions.md"),
+        "# SonarRemedy\n\nUse the `sonar_remedy_*` MCP tools to recover Sonar debt.\n",
+    )
+    return mcp_path, pointer_path, full_path
 
 
 def _sonarremedy_dir(target: str) -> str:
@@ -113,6 +157,36 @@ def _ensure_gitignore(target: str) -> list[str]:
     return missing
 
 
+def _version_file(target: str) -> str:
+    return os.path.join(_sonarremedy_dir(target), "version.json")
+
+
+def _read_pack_version(target: str) -> str | None:
+    path = _version_file(target)
+    if os.path.isfile(path):
+        try:
+            with open(path, encoding="utf-8") as handle:
+                return json.load(handle).get("version")
+        except (ValueError, OSError):
+            return None
+    return None
+
+
+def _track_version(target: str) -> dict[str, Any]:
+    """Record the current pack version; report whether it changed since the last init."""
+    previous = _read_pack_version(target)
+    path = _version_file(target)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8") as handle:
+        json.dump({"version": __version__}, handle, indent=2, sort_keys=True)
+        handle.write("\n")
+    return {
+        "previous": previous,
+        "current": __version__,
+        "updated": previous is not None and previous != __version__,
+    }
+
+
 def _init_sonarremedy_dir(target: str) -> dict[str, Any]:
     """Create .sonarremedy/ (rules.json + generated subdirs); idempotent."""
     base = _sonarremedy_dir(target)
@@ -128,7 +202,13 @@ def _init_sonarremedy_dir(target: str) -> dict[str, Any]:
             json.dump({"whitelist": [], "blacklist": []}, handle, indent=2, sort_keys=True)
             handle.write("\n")
         created.append("rules.json")
-    return {"base": base, "created": created, "gitignore_added": _ensure_gitignore(target)}
+    version = _track_version(target)
+    return {
+        "base": base,
+        "created": created,
+        "gitignore_added": _ensure_gitignore(target),
+        "version": version,
+    }
 
 
 def _clean(target: str) -> dict[str, Any]:
@@ -642,7 +722,7 @@ def main(argv: list[str] | None = None) -> int:
             return _update(args.path)
         if args.command == "init":
             target = os.path.abspath(args.dir or os.getcwd())
-            mcp_path, instructions_path = _write_init_files(target)
+            mcp_path, pointer_path, full_path = _write_init_files(target)
             state = _init_sonarremedy_dir(target)
             print(
                 json.dumps(
@@ -650,10 +730,12 @@ def main(argv: list[str] | None = None) -> int:
                         "status": "initialized",
                         "dir": target,
                         "mcp": mcp_path,
-                        "instructions": instructions_path,
+                        "instructions": pointer_path,
+                        "full_instructions": full_path,
                         "sonarremedy": state["base"],
                         "created": state["created"],
                         "gitignore_added": state["gitignore_added"],
+                        "version": state["version"],
                     },
                     sort_keys=True,
                 )

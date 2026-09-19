@@ -20,6 +20,8 @@ All notable changes to SonarRemedy are documented here.
 
 - **Copilot instructions + MCP descriptions** — disambiguated `scan_exclusions` (detect in code) vs `rules` (configured lists), so Copilot scans the code instead of just listing empty rules.
 - **Copilot instructions** — explicit "NEVER read the SonarRemedy source code; the `sonar_remedy_*` MCP tools are the only interface" (stops Copilot from reading the pack implementation).
+- **Slim Copilot pointer + full instructions** — `.github/copilot-instructions.md` is now a short pointer; the full rules live in `.sonarremedy/instructions.md` (both written by `init`). Added the rule "always use SonarRemedy; if it's missing or a command fails, report it clearly and ask — never fall back to manual work unless the human explicitly says so".
+- **Smart merge + version tracking in `init`** — `.github/copilot-instructions.md` now MERGES the SonarRemedy section (between `<!-- SonarRemedy:start/end -->` markers), preserving the user's own instructions instead of overwriting them; and `.sonarremedy/version.json` records the pack version so `init` reports when SonarRemedy was updated since the last run.
 
 ## [0.2.7] - 2026-09-18
 
