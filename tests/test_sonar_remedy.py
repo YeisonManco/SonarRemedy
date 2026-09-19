@@ -2,6 +2,7 @@
 
 import contextlib
 import io
+import json
 import os
 import tempfile
 import unittest
@@ -715,6 +716,166 @@ class RunAllCommandTests(unittest.TestCase):
                 ]
             )
         self.assertEqual(code, 2)
+
+
+class AutopilotCommandTests(unittest.TestCase):
+    REVISION = "b" * 40
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.repo = os.path.join(self.tmp.name, "target")
+        os.makedirs(self.repo)
+        with open(os.path.join(self.repo, "a.cs"), "w", encoding="utf-8") as fh:
+            fh.write("class A { int Value() => 1; }\n")
+        self.state = os.path.join(self.tmp.name, "queue")
+        self.export = os.path.join(self.tmp.name, "export.json")
+        self.config_path = os.path.join(self.tmp.name, "config.json")
+        rc.save(_valid_config(), self.config_path)
+
+    def _identity(self, root):
+        return {"root": str(root), "branch": "main", "revision": self.REVISION}
+
+    def _write_export(self, entries):
+        with open(self.export, "w", encoding="utf-8") as fh:
+            json.dump({"version": 1, "revision": self.REVISION, "issues": entries}, fh)
+
+    def _issue(self, name="S1"):
+        return {"id": name, "path": "a.cs", "kind": "smells", "line": 1, "rule": "csharp:S1"}
+
+    def _init_repo(self):
+        with contextlib.redirect_stdout(io.StringIO()):
+            sonar_remedy.main(["init", "--dir", self.repo])
+
+    def _factory(self, context):
+        source = context["sources"][0]
+        return {
+            "version": 1,
+            "job_id": context["job_id"],
+            "attempt_id": context["attempt_id"],
+            "lease": context["lease"],
+            "context_fingerprint": context["context_fingerprint"],
+            "status": "proposed",
+            "reason": "",
+            "risks": [],
+            "follow_up": [],
+            "test_plan": "Autopilot fixture only; no model runs tests.",
+            "edits": [
+                {
+                    "path": source["path"],
+                    "before_sha256": source["sha256"],
+                    "replacements": [{"old": "Value()", "new": "Value( )"}],
+                }
+            ],
+        }
+
+    def _run_cli(self, argv):
+        with contextlib.redirect_stdout(io.StringIO()) as buf:
+            code = sonar_remedy.main(argv)
+        return code, buf.getvalue()
+
+    def test_autopilot_dry_run_plans_phases_without_writing(self):
+        result = sonar_remedy.autopilot(self.repo, self.state)
+        self.assertEqual(result["status"], "dry-run")
+        self.assertEqual(
+            result["phases"], ["setup", "slice", "run", "configure", "integrate", "status"]
+        )
+        self.assertFalse(os.path.exists(self.state))
+
+    def test_autopilot_blocks_when_setup_missing(self):
+        self._write_export([self._issue()])
+        result = sonar_remedy.autopilot(
+            self.repo,
+            self.state,
+            export=self.export,
+            execute=True,
+            identity_reader=self._identity,
+        )
+        self.assertEqual(result["status"], "blocked")
+        self.assertEqual(result["phase"], "setup")
+        self.assertIn("init --dir", result["fix"])
+        self.assertFalse(os.path.exists(self.state))
+
+    def test_autopilot_blocks_when_no_queue_and_no_export(self):
+        self._init_repo()
+        result = sonar_remedy.autopilot(
+            self.repo, self.state, execute=True, identity_reader=self._identity
+        )
+        self.assertEqual(result["status"], "blocked")
+        self.assertEqual(result["phase"], "slice")
+        self.assertIn("--export", result["fix"])
+
+    def test_autopilot_surfaces_awaiting_proposals(self):
+        self._init_repo()
+        self._write_export([self._issue()])
+        first = sonar_remedy.autopilot(
+            self.repo,
+            self.state,
+            export=self.export,
+            execute=True,
+            identity_reader=self._identity,
+        )
+        self.assertEqual(first["status"], "awaiting_proposals")
+        waiting = first["waiting"]
+        self.assertEqual(len(waiting), 1)
+        self.assertTrue(waiting[0]["proposal_path"].endswith(".json"))
+        second = sonar_remedy.autopilot(
+            self.repo, self.state, execute=True, identity_reader=self._identity
+        )
+        self.assertEqual(second["status"], "awaiting_proposals")
+        self.assertEqual(second["waiting"][0]["attempt_id"], waiting[0]["attempt_id"])
+
+    def test_autopilot_proposals_ready_via_factory(self):
+        self._init_repo()
+        self._write_export([self._issue()])
+        result = sonar_remedy.autopilot(
+            self.repo,
+            self.state,
+            export=self.export,
+            execute=True,
+            identity_reader=self._identity,
+            proposal_factory=self._factory,
+        )
+        self.assertEqual(result["status"], "proposals_ready")
+        self.assertEqual(len(result["jobs"]), 1)
+        self.assertIn("configure", result["next_command"])
+
+    def test_autopilot_integrate_blocked_without_executor_config(self):
+        self._init_repo()
+        self._write_export([self._issue()])
+        result = sonar_remedy.autopilot(
+            self.repo,
+            self.state,
+            export=self.export,
+            execute=True,
+            integrate=True,
+            identity_reader=self._identity,
+            proposal_factory=self._factory,
+        )
+        self.assertEqual(result["status"], "blocked")
+        self.assertEqual(result["phase"], "configure")
+        self.assertIn("--approve-checks-sha256", result["fix"])
+
+    def test_autopilot_rejects_bad_bounds(self):
+        with self.assertRaises(Exception) as ctx:
+            sonar_remedy.autopilot(self.repo, self.state, limit=0)
+        self.assertEqual(type(ctx.exception).__name__, "Blocked")
+
+    def test_autopilot_cli_dry_run(self):
+        code, output = self._run_cli(
+            [
+                "--config",
+                self.config_path,
+                "autopilot",
+                "--state",
+                os.path.join(self.tmp.name, "q"),
+                "--repo",
+                self.tmp.name,
+            ]
+        )
+        self.assertEqual(code, 0)
+        self.assertIn("dry-run", output)
+        self.assertIn("setup", output)
 
 
 class ConfigureProjectCommandTests(unittest.TestCase):

@@ -2,6 +2,12 @@
 
 All notable changes to SonarRemedy are documented here.
 
+## [0.4.0] - 2026-09-19
+
+### Added
+
+- **`autopilot` harness** (`sonarremedy autopilot` + `sonar_remedy_autopilot` MCP tool) — deterministic end-to-end flow with all the rules: setup-gate (repo `init` via `check`, exact `init --dir` fix), slice, manual proposal batches with `resume`, configure-gate (integrating stops until checks are explicitly bound with `--approve-checks-sha256`), integrate, and status with the exact next command. Dry-run by default; stateless stepper, so Copilot drives one command per phase instead of improvising the pipeline. The model only fills bounded proposals; invalid ones record `failed` and never apply.
+
 ## [0.3.1] - 2026-09-19
 
 ### Fixed

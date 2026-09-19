@@ -161,6 +161,23 @@ sonarremedy status --state <queue>
 
 If you skipped the install, replace `sonarremedy` with `python -B SonarRemedy/sonar_remedy.py` and `sonar-remedy-config` with `python -B SonarRemedy/sonar_remedy_config.py`.
 
+## Deterministic flow (autopilot)
+
+Copilot interprets instructions, so it can improvise. `autopilot` is the harness that owns the flow instead: every call advances as far as the rules allow — setup-gate, slice, run, configure-gate, integrate, status — and reports its phase with the exact next command. The model only fills bounded proposals; it never chooses a step.
+
+```powershell
+sonarremedy autopilot --state <queue> --repo <path>             # plan only (dry-run)
+sonarremedy autopilot --state <queue> --repo <path> --export <export.json> --execute
+# ... write one proposal per waiting proposal_path ...
+sonarremedy autopilot --state <queue> --repo <path> --execute   # resume
+sonarremedy autopilot --state <queue> --repo <path> --execute --integrate
+```
+
+- Dry-run is the default: it prints the ordered phases and writes nothing.
+- A repo without `init` stops at the setup gate with the exact `init --dir` fix (no commit/push of instructions required — see the worktree note above).
+- Proposals stop at `awaiting_proposals` with each `proposal_path`; integrating stops at the configure gate until checks are explicitly bound (`configure --checks ... --approve-checks-sha256 ... --execute`).
+- The same flow is available to Copilot as the `sonar_remedy_autopilot` MCP tool.
+
 To save a project config non-interactively (for scripts), use:
 
 ```powershell

@@ -20,6 +20,7 @@ COMMANDS = [
     "schedule",
     "analyze",
     "run-all",
+    "autopilot",
     "configure-project",
     "scan-suppressions",
     "scan-exclusions",
@@ -53,6 +54,26 @@ class ToolRegistryTests(unittest.TestCase):
             "sonar_remedy_run", {"state": "C:/q", "limit": 8, "resume": True, "execute": True}
         )
         self.assertEqual(argv, ["run", "--state", "C:/q", "--limit", "8", "--resume", "--execute"])
+
+    def test_build_argv_autopilot(self):
+        argv = mcp.build_argv(
+            "sonar_remedy_autopilot",
+            {"state": "C:/q", "repo": "C:/r", "limit": 3, "integrate": True, "execute": True},
+        )
+        self.assertEqual(
+            argv,
+            [
+                "autopilot",
+                "--state",
+                "C:/q",
+                "--repo",
+                "C:/r",
+                "--limit",
+                "3",
+                "--integrate",
+                "--execute",
+            ],
+        )
 
     def test_build_argv_unknown(self):
         with self.assertRaises(ValueError):

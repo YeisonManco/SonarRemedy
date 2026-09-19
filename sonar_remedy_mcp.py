@@ -96,6 +96,22 @@ TOOLS = [
         },
     },
     {
+        "name": "sonar_remedy_autopilot",
+        "description": "Deterministic harness: setup-gate, slice, run, configure-gate, integrate, status. Reports its phase with the exact next command; the model only fills bounded proposals.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "state": {"type": "string"},
+                "repo": {"type": "string"},
+                "export": {"type": "string"},
+                "limit": {"type": "integer"},
+                "integrate": {"type": "boolean"},
+                "execute": {"type": "boolean"},
+            },
+            "required": ["state"],
+        },
+    },
+    {
         "name": "sonar_remedy_analyze",
         "description": "Run the local pipeline to regenerate+publish Sonar results.",
         "inputSchema": {
@@ -272,6 +288,16 @@ def build_argv(name: str, arguments: dict[str, Any] | None) -> list[str]:
             g
             + ["run-all", "--state", a["state"]]
             + _opt("--repo", a.get("repo"))
+            + (["--execute"] if a.get("execute") else [])
+        )
+    if name == "sonar_remedy_autopilot":
+        return (
+            g
+            + ["autopilot", "--state", a["state"]]
+            + _opt("--repo", a.get("repo"))
+            + _opt("--export", a.get("export"))
+            + _opt("--limit", a.get("limit"))
+            + (["--integrate"] if a.get("integrate") else [])
             + (["--execute"] if a.get("execute") else [])
         )
     if name == "sonar_remedy_analyze":

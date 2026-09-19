@@ -7,8 +7,10 @@ import re
 import shutil
 import subprocess
 import sys
+from collections.abc import Callable
 from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as _dist_version
+from pathlib import Path
 from typing import Any
 
 import sonar_fetch
@@ -438,6 +440,149 @@ def _reset(target: str) -> dict[str, Any]:
     return {"status": "reset", "removed": removed}
 
 
+AUTOPILOT_PHASES = ("setup", "slice", "run", "configure", "integrate", "status")
+
+
+def autopilot(
+    repo: str,
+    state: str,
+    export: str | None = None,
+    limit: int = 4,
+    integrate: bool = False,
+    execute: bool = False,
+    branch: str = "main",
+    proposal_factory: Callable[..., dict[str, Any]] | None = None,
+    identity_reader: Callable[[Path], dict[str, str]] | None = None,
+) -> dict[str, Any]:
+    """Deterministic harness: setup-gate, slice, run, configure-gate, integrate, status.
+
+    Stateless stepper: every call advances as far as the rules allow, then
+    reports its phase with the exact next command. The model never chooses a
+    step; it only fills bounded proposals the harness asks for. The optional
+    factory/reader callbacks are local test seams, not CLI providers.
+    """
+    import debt_queue
+    import debt_runner
+
+    repo_abs = os.path.abspath(repo)
+    state_abs = os.path.abspath(state)
+    resume_command = f"sonarremedy autopilot --state {state_abs} --repo {repo_abs} --execute"
+    if integrate:
+        resume_command += " --integrate"
+    if type(limit) is not int or not 1 <= limit <= 8:
+        raise debt_queue.Blocked("invalid_autopilot_bounds")
+    if not execute:
+        return {
+            "status": "dry-run",
+            "phases": list(AUTOPILOT_PHASES),
+            "repo": repo_abs,
+            "state": state_abs,
+            "integrate": integrate,
+            "notice": "No files or processes; use --execute to advance the harness.",
+        }
+    setup = _check(repo_abs)
+    if setup.get("status") != "up_to_date":
+        fix = f"sonarremedy init --dir {repo_abs}"
+        return {
+            "status": "blocked",
+            "phase": "setup",
+            "reason": setup.get("status"),
+            "detail": setup,
+            "fix": f"run `{fix}`",
+            "next_command": fix,
+        }
+    sliced: dict[str, Any] | None = None
+    if not os.path.isfile(os.path.join(state_abs, "queue.sqlite3")):
+        if not export:
+            fix = (
+                f"sonarremedy autopilot --state {state_abs} "
+                f"--repo {repo_abs} --export <export.json> --execute"
+            )
+            return {
+                "status": "blocked",
+                "phase": "slice",
+                "reason": "queue_missing_export_required",
+                "fix": f"run fetch first, then `{fix}`",
+                "next_command": fix,
+            }
+        sliced = debt_queue.slice_queue(
+            repo_abs,
+            export,
+            state_abs,
+            branch,
+            execute=True,
+            identity_reader=identity_reader,
+        )
+    work = debt_queue.Queue(state_abs, target=repo_abs, identity_reader=identity_reader)
+    try:
+        ran = debt_runner.run(
+            work,
+            provider="manual",
+            execute=True,
+            resume=True,
+            integrate=integrate,
+            limit=limit,
+            proposal_factory=proposal_factory,
+        )
+    except Exception as error:
+        if type(error).__name__ == "Blocked" and str(error) == "reviewed_execution_config_required":
+            fix = (
+                f"sonarremedy configure --state {state_abs} --repo {repo_abs} "
+                "--checks <checks.json> --approve-checks-sha256 <sha256> --execute"
+            )
+            return {
+                "status": "blocked",
+                "phase": "configure",
+                "reason": "reviewed_execution_config_required",
+                "fix": f"bind reviewed checks first: `{fix}`",
+                "next_command": fix,
+            }
+        raise
+    if ran.get("status") == "awaiting_proposals":
+        return {
+            "status": "awaiting_proposals",
+            "phase": "run",
+            "waiting": ran.get("waiting", []),
+            "next_command": f"write one proposal per waiting proposal_path, then `{resume_command}`",
+        }
+    if ran.get("status") == "proposals_ready":
+        jobs = ran.get("jobs", [])
+        fix = (
+            f"sonarremedy configure --state {state_abs} --repo {repo_abs} "
+            "--checks <checks.json> --approve-checks-sha256 <sha256> --execute"
+        )
+        return {
+            "status": "proposals_ready",
+            "phase": "configure",
+            "jobs": jobs,
+            "notice": "Integrate only after explicit check configuration/review.",
+            "next_command": f"`{fix}`, then `{resume_command} --integrate`",
+        }
+    monitor = work.monitor()
+    action = next_action(monitor["entry_states"])
+    finished: dict[str, Any] = {
+        "status": ran.get("status"),
+        "phase": "status",
+        "runner": ran,
+        "next_action": action,
+        **estimate(monitor["entry_states"]),
+    }
+    if sliced is not None:
+        finished["sliced"] = {"entries": sliced.get("entries"), "jobs": sliced.get("jobs")}
+    if action == "re_scan_required":
+        finished["next_step"] = (
+            "commit+push fixes, re-run the Sonar pipeline, git pull, then re-run fetch+slice"
+        )
+        finished["next_command"] = finished["next_step"]
+    elif action in ("run_batch", "resume"):
+        finished["next_command"] = resume_command
+    elif action == "integrate":
+        finished["next_command"] = resume_command if integrate else resume_command + " --integrate"
+    else:
+        finished["next_command"] = "done; no commits/push in this runner"
+    return finished
+
+
 def next_action(states: dict[str, int]) -> str:
     """Deterministic next step from a queue's entry_states."""
     if states.get("pending", 0) > 0:
@@ -763,6 +908,20 @@ def main(argv: list[str] | None = None) -> int:
     runall_cmd.add_argument("--state", required=True, help="base directory for chunk queues")
     runall_cmd.add_argument("--output", help="fetch output directory")
     runall_cmd.add_argument("--execute", action="store_true", help="create the chunk queues")
+    autopilot_cmd = commands.add_parser(
+        "autopilot",
+        help="deterministic harness: setup-gate, slice, run, configure-gate, integrate, status",
+    )
+    autopilot_cmd.add_argument(
+        "--state", required=True, help="the queue directory (created by slice)"
+    )
+    autopilot_cmd.add_argument("--repo", help="local checkout (overrides repository.local_path)")
+    autopilot_cmd.add_argument(
+        "--export", help="export.json produced by fetch (to slice a new queue)"
+    )
+    autopilot_cmd.add_argument("--limit", type=int, default=4)
+    autopilot_cmd.add_argument("--integrate", action="store_true")
+    autopilot_cmd.add_argument("--execute", action="store_true")
     cfgproj_cmd = commands.add_parser(
         "configure-project", help="save a project config non-interactively"
     )
@@ -1156,6 +1315,25 @@ def main(argv: list[str] | None = None) -> int:
                 )
             )
             return 0
+        if args.command == "autopilot":
+            repo = args.repo or (rcfg.get("repository") or {}).get("local_path")
+            if not repo:
+                raise rc.ConfigError("--repo is required, or set repository.local_path in config")
+            result = autopilot(
+                repo,
+                args.state,
+                export=args.export,
+                limit=args.limit,
+                integrate=args.integrate,
+                execute=args.execute,
+                branch=(rcfg.get("repository") or {}).get("main_branch") or "main",
+            )
+            print(json.dumps(result, sort_keys=True))
+            return (
+                2
+                if result.get("status") in ("blocked", "quarantined", "reconciliation_required")
+                else 0
+            )
         return 2
     except KeyboardInterrupt:
         print(json.dumps({"status": "cancelled", "reason": "operator_cancelled"}))
