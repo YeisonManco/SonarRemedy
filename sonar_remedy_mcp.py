@@ -138,6 +138,7 @@ TOOLS = [
             "properties": {
                 "state": {"type": "string"},
                 "repo": {"type": "string"},
+                "branch": {"type": "string"},
                 "checks": {"type": "string"},
                 "approve_checks_sha256": {"type": "string"},
                 "limit": {"type": "integer"},
@@ -349,6 +350,7 @@ def build_argv(name: str, arguments: dict[str, Any] | None) -> list[str]:
             g
             + ["recover", "--state", a["state"]]
             + _opt("--repo", a.get("repo"))
+            + _opt("--branch", a.get("branch"))
             + ["--checks", a["checks"], "--approve-checks-sha256", a["approve_checks_sha256"]]
             + _opt("--limit", a.get("limit"))
             + _opt("--max-cycles", a.get("max_cycles"))

@@ -2,6 +2,13 @@
 
 All notable changes to SonarRemedy are documented here.
 
+## [0.9.1] - 2026-09-19
+
+### Fixed
+
+- **`recover` missing base directory** — it sliced cycle queues under a base dir it never created, so `slice_queue` blocked with `missing_path`. `recover` now materializes the base directory before slicing.
+- **`recover` branch mismatch** — it sliced to `config.main_branch` while the checkout was on a different branch (e.g. a hotfix), so `git_identity` blocked with `target_identity_mismatch`. `recover` now accepts `--branch` (CLI and MCP) to recover on the actual checkout branch without mutating the config.
+
 ## [0.9.0] - 2026-09-19
 
 ### Added

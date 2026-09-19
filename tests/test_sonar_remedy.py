@@ -917,6 +917,36 @@ class RecoverCommandTests(unittest.TestCase):
             sonar_remedy.recover(self._rcfg(), self.repo, self.state, self.checks, "", execute=True)
         self.assertEqual(type(ctx.exception).__name__, "Blocked")
 
+    def test_recover_creates_base_directory(self):
+        import sonar_fetch
+
+        saved = os.environ.get("SONAR_TOKEN")
+        self.addCleanup(
+            lambda: (
+                os.environ.pop("SONAR_TOKEN", None)
+                if saved is None
+                else os.environ.__setitem__("SONAR_TOKEN", saved)
+            )
+        )
+        os.environ["SONAR_TOKEN"] = "fixture-token"
+        base = os.path.join(self.tmp.name, "nested", "state-recover")
+        with mock.patch.object(
+            sonar_fetch,
+            "fetch",
+            return_value={"status": "collected", "export": self.export, "issues_total": 0},
+        ):
+            result = sonar_remedy.recover(
+                self._rcfg(),
+                self.repo,
+                base,
+                self.checks,
+                "x" * 64,
+                execute=True,
+                identity_reader=self._identity,
+            )
+        self.assertEqual(result["status"], "done")
+        self.assertTrue(os.path.isdir(base))
+
     def test_recover_done_when_no_issues(self):
         import sonar_fetch
 

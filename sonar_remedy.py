@@ -879,6 +879,8 @@ def recover(
     token_env = rcfg["sonar"]["token_env"]
     if not os.environ.get(token_env):
         raise debt_queue.Blocked(f"{token_env} must be present in the environment")
+    # Materialize the base directory: slice_queue requires its parent to exist.
+    os.makedirs(state_abs, exist_ok=True)
     project = rcfg["sonar"]["project_key"]
     summary = {
         "status": "done",
@@ -1302,6 +1304,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     recover_cmd.add_argument("--state", required=True, help="base directory for cycle queues")
     recover_cmd.add_argument("--repo", help="local checkout (overrides repository.local_path)")
+    recover_cmd.add_argument("--branch", help="branch to recover (default: config main_branch)")
     recover_cmd.add_argument("--checks", required=True, help="checks.json file to bind")
     recover_cmd.add_argument(
         "--approve-checks-sha256", required=True, help="reviewed checks sha256"
@@ -1748,7 +1751,7 @@ def main(argv: list[str] | None = None) -> int:
                 args.state,
                 args.checks,
                 args.approve_checks_sha256,
-                branch=(rcfg.get("repository") or {}).get("main_branch") or "main",
+                branch=args.branch or (rcfg.get("repository") or {}).get("main_branch") or "main",
                 limit=args.limit,
                 execute=args.execute,
                 max_cycles=args.max_cycles,
