@@ -922,6 +922,19 @@ class InitCommandTests(unittest.TestCase):
             with open(version_file, encoding="utf-8") as fh:
                 self.assertIn("version", fh.read())
 
+    def test_check_reports_not_initialized_then_up_to_date(self):
+        with tempfile.TemporaryDirectory() as d:
+            with contextlib.redirect_stdout(io.StringIO()) as buf:
+                code = sonar_remedy.main(["check", "--dir", d])
+            self.assertEqual(code, 0)
+            self.assertIn("not_initialized", buf.getvalue())
+            with contextlib.redirect_stdout(io.StringIO()):
+                sonar_remedy.main(["init", "--dir", d])
+            with contextlib.redirect_stdout(io.StringIO()) as buf:
+                code = sonar_remedy.main(["check", "--dir", d])
+            self.assertEqual(code, 0)
+            self.assertIn("up_to_date", buf.getvalue())
+
     def test_init_creates_sonarremedy_dir_and_rules(self):
         with tempfile.TemporaryDirectory() as d:
             with contextlib.redirect_stdout(io.StringIO()):

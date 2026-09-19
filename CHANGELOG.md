@@ -7,6 +7,7 @@ All notable changes to SonarRemedy are documented here.
 ### Added
 
 - **`rules` as an MCP tool** (`sonar_remedy_rules`) — the AI can list/manage the whitelist/blacklist when the user asks.
+- **`check`** — reports whether the project's SonarRemedy setup is up to date with the installed pack (`up_to_date` / `outdated` / `not_initialized`), driving the "re-run `init` after an update" flow.
 
 ### Fixed
 

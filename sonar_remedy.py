@@ -187,6 +187,25 @@ def _track_version(target: str) -> dict[str, Any]:
     }
 
 
+def _check(target: str) -> dict[str, Any]:
+    """Compare the project's recorded pack version with the installed one."""
+    previous = _read_pack_version(target)
+    if previous is None:
+        return {
+            "status": "not_initialized",
+            "current": __version__,
+            "hint": "run `sonarremedy init` from the project root",
+        }
+    if previous != __version__:
+        return {
+            "status": "outdated",
+            "previous": previous,
+            "current": __version__,
+            "hint": "SonarRemedy was updated; run `sonarremedy init` from the project root",
+        }
+    return {"status": "up_to_date", "version": __version__}
+
+
 def _init_sonarremedy_dir(target: str) -> dict[str, Any]:
     """Create .sonarremedy/ (rules.json + generated subdirs); idempotent."""
     base = _sonarremedy_dir(target)
@@ -598,6 +617,10 @@ def main(argv: list[str] | None = None) -> int:
         "reset", help="remove .sonarremedy/ entirely + sibling worktrees (back to zero)"
     )
     reset_cmd.add_argument("--dir", help="target project directory (default: current)")
+    check_cmd = commands.add_parser(
+        "check", help="report whether the project's SonarRemedy setup is up to date"
+    )
+    check_cmd.add_argument("--dir", help="target project directory (default: current)")
     rules_cmd = commands.add_parser("rules", help="manage exclusion rules (whitelist/blacklist)")
     rules_cmd.add_argument("--dir", help="target project directory (default: current)")
     rules_cmd.add_argument(
@@ -748,6 +771,10 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "reset":
             target = os.path.abspath(args.dir or os.getcwd())
             print(json.dumps(_reset(target), sort_keys=True))
+            return 0
+        if args.command == "check":
+            target = os.path.abspath(args.dir or os.getcwd())
+            print(json.dumps(_check(target), sort_keys=True))
             return 0
         if args.command == "rules":
             import sonar_exclusions_report as report
