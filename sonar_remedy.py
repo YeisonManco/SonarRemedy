@@ -504,7 +504,7 @@ def _update(path: str | None) -> int:
     reinstall = (
         "import subprocess, sys, time; "
         f"time.sleep(2); "
-        f"subprocess.run([sys.executable, '-m', 'pip', 'install', {target!r}])"
+        f"subprocess.run([sys.executable, '-m', 'pip', 'install', '-e', {target!r}])"
     )
     subprocess.Popen(
         [sys.executable, "-c", reinstall],
