@@ -121,6 +121,7 @@ Rules (a wrong field type REJECTS the whole proposal):
 - `risks` is a list of strings (max 8).
 - `edits` are max 8; each `replacements` list has max 32 items. `old` must match the file bytes EXACTLY (CRLF/newlines included).
 - `version` 2 adds a `phase` field to each edit (`test` or `implementation`) for red-first work.
+- To request MORE context when the bounded source window is too small for a complex fix, defer with `status: "deferred"`, `reason: "need_more_context"`, `edits: []`. The queue re-opens the job and the next claim materializes the FULL file (attempt 2). A second `need_more_context` is terminal (deferred for real).
 
 ## Troubleshooting (FAQ)
 

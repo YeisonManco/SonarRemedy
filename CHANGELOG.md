@@ -6,6 +6,7 @@ All notable changes to SonarRemedy are documented here.
 
 ### Added
 
+- **`need_more_context` context escape** — a worker can defer with `reason: "need_more_context"` when the bounded source window (±8 lines for files >16 KiB) is too small for a complex fix. The queue re-opens the job and the next claim materializes the FULL file (attempt 2); a second `need_more_context` is terminal. This keeps the common case cheap while letting complex fixes request more context only when genuinely needed.
 - **`rules` as an MCP tool** (`sonar_remedy_rules`) — the AI can list/manage the whitelist/blacklist when the user asks.
 - **`check`** — reports whether the project's SonarRemedy setup is up to date with the installed pack (`up_to_date` / `outdated` / `not_initialized`), driving the "re-run `init` after an update" flow.
 - **`doctor`** — diagnostic command + MCP tool (`sonar_remedy_doctor`): checks the project version and (with `--state`/`--repo`) a queue's identity (root/branch/revision) against the actual git state, reporting each mismatch with the EXACT fix command. `--fix` applies the safe repairs (re-runs `init` when the setup is behind the pack; never touches a queue or the git state). A bad `--state` (a `.json` file instead of the queue directory) reports a clear "must be the queue directory (contains queue.sqlite3)" hint. Documented in the README ("Diagnose" section) and in the Copilot instructions (rule 10: run `doctor`, don't guess).

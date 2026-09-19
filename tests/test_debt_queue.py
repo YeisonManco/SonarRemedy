@@ -255,6 +255,36 @@ class LifecycleTests(QueueFixture):
         with self.assertRaisesRegex(q.Blocked, "invalid_proposal_schema"):
             self.queue().complete(proposal, execute=True, now=101)
 
+    def test_need_more_context_retries_with_full_context(self):
+        self.create()
+        # Attempt 1 — the worker asks for more context.
+        receipt = self.leased()
+        proposal = self.proposal(receipt)
+        proposal["status"] = "deferred"
+        proposal["edits"] = []
+        proposal["reason"] = "need_more_context"
+        result = self.queue().complete(proposal, execute=True, now=101)
+        self.assertEqual(result["status"], "need_more_context")
+        self.assertIs(result["retry"], True)
+        # The job is back to pending, so the next claim is attempt 2.
+        self.assertEqual(self.queue().monitor()["states"]["pending"], 1)
+        receipt2 = self.leased()
+        context2 = json.loads(Path(receipt2["context_path"]).read_text(encoding="utf-8"))
+        self.assertEqual(context2["attempt"], 2)
+
+    def test_need_more_context_second_deferral_is_terminal(self):
+        self.create()
+        for _ in range(2):
+            receipt = self.leased()
+            proposal = self.proposal(receipt)
+            proposal["status"] = "deferred"
+            proposal["edits"] = []
+            proposal["reason"] = "need_more_context"
+            result = self.queue().complete(proposal, execute=True, now=101)
+        # The second deferral is terminal (no more attempts).
+        self.assertEqual(result["status"], "deferred")
+        self.assertEqual(self.queue().monitor()["states"]["deferred"], 1)
+
     def test_sqlite_connection_failure_is_a_bounded_blocked_outcome(self):
         self.create()
         caught = None
