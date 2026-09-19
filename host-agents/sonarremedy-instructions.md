@@ -13,6 +13,24 @@ Only if the human EXPLICITLY says "no uses SonarRemedy" (or similar) may you do 
 
 If integration is blocked for missing reviewed checks (`reviewed_execution_config_required`): run detection (`sonar_remedy_detect_checks` with the repo), present the draft plus the `missing` list to the human, and ASK for the judgments (policy/reason or failing-test markers). Never invent exe paths, hashes, or markers.
 
+## 0b. Preflight — detect the full state before any debt work
+
+At the START of every "recuperá la deuda" / recovery request (and after `init`), do NOT jump straight to `fetch`/`slice`. First detect the state and say what you'll do:
+
+1. Run `sonar_remedy_doctor --repo <path>` (add `--state <queue>` if you already know the queue). Read EVERY `check` and classify it, then state your plan to the human before mutating anything.
+2. Fix, in this order, anything the doctor flags:
+   - `version` not ok (not_initialized / outdated) → `doctor --fix` (or `init`) first.
+   - `git_hooks` missing/foreign/outdated → `doctor --fix`.
+   - `init_files` missing → `init`.
+   - `barrier` warning (orphaned) → `doctor --repo <path> --fix` (verified release). If it refuses with `barrier_tree_changed` and the ONLY changed files are SonarRemedy's own (`.sonarremedy/`, `.github/copilot-instructions.md`, `.github/sonarremedy-instructions.md`), that is a false contamination from a pack update — verify the proposal's write target is unchanged, release, and tell the human. A real `quarantine` needs the human, never hand-delete.
+   - `queue_identity` mismatch → use the doctor's exact fix (root/branch/revision).
+3. Detect existing queues before slicing a new one: ask the human for the `--state` path if you do not know it — do NOT invent one. Queues live under `~/.sonar-remedy/runs/<project>/` (the human names them). If one exists:
+   - `status --state <q>` → `next_action` = run_batch / resume / integrate / re_scan_required / done. RESUME an existing queue with `proposed`/`leased` work; do NOT re-slice.
+   - a queue whose jobs are all `deferred`/`failed` is terminal — start a fresh `state-<branch>-N` (N+1) and say so.
+4. State your full plan in one short line (found X, will do Y), then proceed. Never silently re-slice over recoverable state, and never apply anything manually.
+
+Standing rule: recovery is a LOOP — after any fix (barrier release, SDK pin, env repair, close editor), RETRY the same integrate; the job stays `proposed`. Only re-slice when `configure` is one-shot-stale (a file changed after configure) or the queue is terminal.
+
 ## 1. Never read the source
 
 NEVER read the SonarRemedy source code — not `sonar_remedy*.py`, `debt_*.py`, `sonar_*.py`, nor any file inside the pack. The MCP tools are the only interface: call them, do not inspect how they are implemented. Likewise, DO NOT analyze the target project's code manually (no reading files, no grep, no "let me check the code", no own diagnosis).

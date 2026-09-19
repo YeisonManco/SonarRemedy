@@ -13,6 +13,7 @@ All notable changes to SonarRemedy are documented here.
 - **Troubleshooting FAQ expanded with every real-world recovery** — new sections for build/check failures (`.failed.json` receipts, `path1` restore causes), barrier/journal recovery, path/OS errors, and .NET build/restore specifics. Each blocked reason now carries its exact action so the agent SUGGESTS the fix instead of stopping cold.
 - **Document-before-commit rule** — codified in `CONTRIBUTING.md` and the Copilot instructions: every user-visible change ships its docs (CHANGELOG, README, Troubleshooting FAQ) in the SAME commit; no commit or push without writing down what changed, why, and any recovery applied.
 - **FAQ: false barrier refusal after pack update + `init`** — documented that SonarRemedy's own managed files (`.sonarremedy/`, `.github/copilot-instructions.md`, `.github/sonarremedy-instructions.md`) are re-written by `init`, so a barrier release right after an update reports a false `barrier_tree_changed`; verify the fix target and release. Debt noted: the snapshot still includes those files.
+- **Preflight playbook** — new section 0b in the full instructions: on every recovery request the AI must run `doctor` first, classify every check, detect existing queues/barriers, state its plan, and retry in a loop instead of stopping cold or re-slicing over recoverable state.
 
 ## [0.7.1] - 2026-09-19
 
