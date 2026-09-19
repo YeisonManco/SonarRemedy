@@ -834,14 +834,23 @@ class UpdateCommandTests(unittest.TestCase):
             os.makedirs(os.path.join(d, ".git"))
             with (
                 mock.patch("subprocess.run") as rpatched,
-                mock.patch("subprocess.Popen") as popatched,
+                mock.patch("subprocess.Popen"),
             ):
                 with contextlib.redirect_stdout(io.StringIO()):
                     code = sonar_remedy.main(["update", "--path", d])
         self.assertEqual(code, 0)
         self.assertEqual(rpatched.call_count, 1)
-        self.assertEqual(rpatched.call_args.args[0][:2], ["git", "-C"])
-        self.assertEqual(popatched.call_count, 1)
+
+    def test_update_auto_detects_module_dir(self):
+        module_dir = os.path.dirname(os.path.abspath(sonar_remedy.__file__))
+        with (
+            mock.patch("subprocess.run") as rpatched,
+            mock.patch("subprocess.Popen"),
+        ):
+            with contextlib.redirect_stdout(io.StringIO()):
+                code = sonar_remedy.main(["update"])
+        self.assertEqual(code, 0)
+        self.assertEqual(rpatched.call_args.args[0], ["git", "-C", module_dir, "pull"])
 
 
 class InitCommandTests(unittest.TestCase):

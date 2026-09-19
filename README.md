@@ -38,14 +38,13 @@ python -m pip install -e .
 
 ## Update
 
-Update the pack with one command:
+Update the pack with one command — it works from anywhere (the clone is auto-detected):
 
 ```powershell
-sonarremedy update                          # run it from your clone, or:
-sonarremedy update --path C:\path\to\SonarRemedy
+sonarremedy update
 ```
 
-It runs `git pull` + `pip install` for you. Check the version with `sonarremedy --version`.
+It runs `git pull` + `pip install` for you. If you need to point at a specific clone, use `sonarremedy update --path C:\path\to\SonarRemedy`. Check the version with `sonarremedy --version`.
 
 ## What it does
 

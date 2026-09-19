@@ -364,7 +364,13 @@ def _configure_projects_interactive() -> int:
 
 def _update(path: str | None) -> int:
     """git pull, then reinstall in a detached process (so pip can replace the .exe)."""
-    target = os.path.abspath(path) if path else os.getcwd()
+    # Find the clone from anywhere: --path wins, then this module's own location
+    # (works for editable installs / source), then the current directory.
+    if path:
+        target = os.path.abspath(path)
+    else:
+        module_dir = os.path.dirname(os.path.abspath(__file__))
+        target = module_dir if os.path.isdir(os.path.join(module_dir, ".git")) else os.getcwd()
     if not os.path.isdir(os.path.join(target, ".git")):
         print(
             json.dumps(
@@ -491,8 +497,10 @@ def main(argv: list[str] | None = None) -> int:
     )
     cfgproj_cmd.add_argument("--pat-env", default="GIT_PAT", help="env var name for the Git PAT")
     commands.add_parser("configure-projects", help="interactively register multiple projects")
-    update_cmd = commands.add_parser("update", help="git pull + reinstall the pack from its clone")
-    update_cmd.add_argument("--path", help="SonarRemedy clone directory (default: current)")
+    update_cmd = commands.add_parser(
+        "update", help="git pull + reinstall the pack (works from anywhere)"
+    )
+    update_cmd.add_argument("--path", help="SonarRemedy clone directory (auto-detected if omitted)")
     init_cmd = commands.add_parser(
         "init", help="write .vscode/mcp.json + the Copilot instruction into a project"
     )
