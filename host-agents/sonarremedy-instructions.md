@@ -90,6 +90,38 @@ When you act as the worker and generate a `proposal.json`, fix the issue using B
 
 For more depth, read the per-language skill (`skills/<language>-index.md`, e.g. `dotnet-index.md`) and the Sonar fix skill (`skills/sonar/sonar-fix-issue/SKILL.md`). Keep the proposal itself small and exact: the `edits` carry the exact `old → new` replacement text.
 
+## 12. The proposal.json contract (EXACT format)
+
+A valid proposal is a single JSON object with EXACTLY these fields — no extra, none missing:
+
+```json
+{
+  "version": 1,
+  "job_id": "<copied from the job>",
+  "attempt_id": "<copied>",
+  "lease": "<copied>",
+  "context_fingerprint": "<copied>",
+  "status": "proposed",
+  "edits": [
+    {"path": "<file>", "before_sha256": "<sha>", "replacements": [{"old": "<exact text>", "new": "<replacement text>"}]}
+  ],
+  "reason": "short_token_no_spaces",
+  "risks": ["human-readable risk"],
+  "test_plan": "one string describing the intended behavioral proof",
+  "follow_up": []
+}
+```
+
+Rules (a wrong field type REJECTS the whole proposal):
+
+- `status` is only `proposed`, `deferred`, or `failed`. `proposed` REQUIRES `edits`; `deferred`/`failed` have NO edits and a `reason`.
+- `reason` is a short TOKEN with NO spaces: `^[A-Za-z0-9_.-]{1,128}$` (e.g. `make_dto_nonempty`).
+- `test_plan` is a SINGLE STRING (1..4000 chars) — NOT a list.
+- `follow_up` is a LIST (max 4) of `{"action": "<token>", "name": "<short>", "note": "<short>"}` — use `[]` when none. It is NOT a string.
+- `risks` is a list of strings (max 8).
+- `edits` are max 8; each `replacements` list has max 32 items. `old` must match the file bytes EXACTLY (CRLF/newlines included).
+- `version` 2 adds a `phase` field to each edit (`test` or `implementation`) for red-first work.
+
 ## Troubleshooting (FAQ)
 
 When a command fails with a blocked reason, use this table instead of guessing or doing manual work:
