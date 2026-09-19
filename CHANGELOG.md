@@ -2,6 +2,12 @@
 
 All notable changes to SonarRemedy are documented here.
 
+## [0.6.3] - 2026-09-19
+
+### Fixed
+
+- **Opaque OS errors** — raw `OSError`/`PermissionError` failures reported only the exception type (`"reason": "PermissionError"`), which cannot be diagnosed. The facade now includes the sanitized message (file/operation), so the next one names the culprit.
+
 ## [0.6.2] - 2026-09-19
 
 ### Fixed

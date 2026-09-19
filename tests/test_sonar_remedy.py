@@ -718,6 +718,17 @@ class RunAllCommandTests(unittest.TestCase):
             )
         self.assertEqual(code, 2)
 
+    def test_facade_reports_os_error_detail(self):
+        with mock.patch.object(
+            sonar_remedy, "_write_init_files", side_effect=PermissionError("denied: probe")
+        ):
+            with contextlib.redirect_stdout(io.StringIO()) as buf:
+                code = sonar_remedy.main(["init", "--dir", self.tmp.name])
+        self.assertEqual(code, 2)
+        output = buf.getvalue()
+        self.assertIn("PermissionError", output)
+        self.assertIn("denied: probe", output)
+
 
 class DetectChecksTests(unittest.TestCase):
     def setUp(self):

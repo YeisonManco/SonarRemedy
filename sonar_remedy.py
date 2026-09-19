@@ -1559,7 +1559,9 @@ def main(argv: list[str] | None = None) -> int:
         if isinstance(error, rc.ConfigError) or type(error).__name__ == "Blocked":
             reason = sonar_fetch.redactor(secret)(str(error))
         else:
-            reason = type(error).__name__
+            # Raw OS/runtime failures must name the file/operation: a bare
+            # type ("OSError", "PermissionError") cannot be diagnosed.
+            reason = f"{type(error).__name__}: {sonar_fetch.redactor(secret)(str(error))}"
         print(json.dumps({"status": "blocked", "reason": reason}))
         return 2
 
