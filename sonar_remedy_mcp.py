@@ -132,7 +132,7 @@ TOOLS = [
     },
     {
         "name": "sonar_remedy_analyze",
-        "description": "Run the local pipeline to regenerate+publish Sonar results.",
+        "description": "Run the local pipeline to regenerate+publish Sonar results (uses the pack's built-in script when `script` is omitted).",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -142,7 +142,7 @@ TOOLS = [
                 "branch": {"type": "string"},
                 "execute": {"type": "boolean"},
             },
-            "required": ["script"],
+            "required": [],
         },
     },
     {

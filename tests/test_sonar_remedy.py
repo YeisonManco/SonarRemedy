@@ -440,7 +440,7 @@ class AnalyzeCommandTests(unittest.TestCase):
     def test_analyze_argv_maps_config(self):
         argv = sonar_remedy._analyze_argv(_valid_config(), "C:/pipeline.ps1", "C:/repo", "main")
         self.assertEqual(argv[0], "pwsh")
-        self.assertIn("-ProjectBaseDir", argv)
+        self.assertIn("-WorktreePath", argv)
         self.assertIn("C:/repo", argv)
         self.assertIn("-BranchName", argv)
         self.assertIn("main", argv)
@@ -452,6 +452,18 @@ class AnalyzeCommandTests(unittest.TestCase):
     def test_analyze_argv_skip_pull(self):
         argv = sonar_remedy._analyze_argv(_valid_config(), "s.ps1", "r", "main", skip_pull=True)
         self.assertIn("-SkipPull", argv)
+
+    def test_analyze_defaults_to_builtin_script(self):
+        saved = os.environ.get("SONAR_TOKEN")
+        self.addCleanup(lambda: self._restore_token(saved))
+        os.environ["SONAR_TOKEN"] = "sqa_TEST"
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            code = sonar_remedy.main(
+                ["--config", self.config_path, "analyze", "--repo", self.tmp.name]
+            )
+        self.assertEqual(code, 0)
+        self.assertIn("sonar_compact.ps1", buf.getvalue())
 
     def test_analyze_dry_run_prints_argv(self):
         saved = os.environ.get("SONAR_TOKEN")

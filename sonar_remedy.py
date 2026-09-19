@@ -860,7 +860,7 @@ def _analyze_argv(
         "-NoProfile",
         "-File",
         script,
-        "-ProjectBaseDir",
+        "-WorktreePath",
         repo,
         "-BranchName",
         branch,
@@ -1154,7 +1154,9 @@ def main(argv: list[str] | None = None) -> int:
     analyze_cmd = commands.add_parser(
         "analyze", help="run the local pipeline to generate+publish Sonar results"
     )
-    analyze_cmd.add_argument("--script", required=True, help="path to the local pipeline-sim .ps1")
+    analyze_cmd.add_argument(
+        "--script", help="local pipeline .ps1 (default: the pack's sonar_compact.ps1)"
+    )
     analyze_cmd.add_argument("--repo", help="local checkout (overrides repository.local_path)")
     analyze_cmd.add_argument("--branch", help="branch to analyze (default: config main_branch)")
     analyze_cmd.add_argument("--skip-pull", action="store_true")
@@ -1534,7 +1536,10 @@ def main(argv: list[str] | None = None) -> int:
             if not os.environ.get(token_env):
                 raise rc.ConfigError(f"{token_env} must be present in the environment")
             branch = args.branch or rcfg["repository"]["main_branch"]
-            argv = _analyze_argv(rcfg, args.script, repo, branch, skip_pull=args.skip_pull)
+            script = args.script or os.path.join(
+                os.path.dirname(os.path.abspath(__file__)), "sonar_compact.ps1"
+            )
+            argv = _analyze_argv(rcfg, script, repo, branch, skip_pull=args.skip_pull)
             if not args.execute:
                 print(json.dumps({"status": "dry-run", "argv": argv}, sort_keys=True))
                 return 0

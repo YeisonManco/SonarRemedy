@@ -2,6 +2,12 @@
 
 All notable changes to SonarRemedy are documented here.
 
+## [0.8.3] - 2026-09-19
+
+### Fixed
+
+- **`analyze` uses the pack's built-in script by default** — `--script` is now optional (`sonar_remedy_analyze.script` too): when omitted it runs the pack's `sonar_compact.ps1`, so the AI can regenerate+publish Sonar results without anyone passing a path. Also fixed the parameter mismatch — `analyze` now passes `-WorktreePath` (matching the scripts) instead of the previously mismatched `-ProjectBaseDir`.
+
 ## [0.8.2] - 2026-09-19
 
 ### Added
