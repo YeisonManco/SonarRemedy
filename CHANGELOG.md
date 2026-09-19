@@ -13,6 +13,7 @@ All notable changes to SonarRemedy are documented here.
 - **`update` auto-detects the clone** — `sonarremedy update` now works from any directory (prefers the module's own location), not only from the clone folder.
 - **Fetch with zero issues** — no longer crashes with `IndexError`; writes an empty export and reports `issues_total: 0`.
 - **Missing config** — `fetch` without a configured project now reports `config not found` (a clear `ConfigError`) instead of a raw `FileNotFoundError`.
+- **`init` gitignores the local editor files** — `.github/copilot-instructions.md` and `.vscode/mcp.json` are now added to `.gitignore` (Copilot still reads them from their standard location; they just aren't pushed).
 
 ### Changed
 

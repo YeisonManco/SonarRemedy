@@ -92,20 +92,25 @@ def _worktree_root(target: str) -> str:
     return os.path.join(os.path.dirname(absolute), os.path.basename(absolute) + "-remedy-wtrees")
 
 
-def _ensure_gitignore(target: str) -> bool:
-    """Append .sonarremedy/ to .gitignore if missing. Returns True when added."""
+_GITIGNORE_ENTRIES = (".sonarremedy/", ".github/copilot-instructions.md", ".vscode/mcp.json")
+
+
+def _ensure_gitignore(target: str) -> list[str]:
+    """Append missing local-setup entries to .gitignore; returns what was added."""
     gitignore = os.path.join(os.path.abspath(target), ".gitignore")
     existing = ""
     if os.path.isfile(gitignore):
         with open(gitignore, encoding="utf-8") as handle:
             existing = handle.read()
-    if ".sonarremedy/" in existing:
-        return False
+    missing = [entry for entry in _GITIGNORE_ENTRIES if entry not in existing]
+    if not missing:
+        return []
     with open(gitignore, "a", encoding="utf-8") as handle:
         if existing and not existing.endswith("\n"):
             handle.write("\n")
-        handle.write(".sonarremedy/\n")
-    return True
+        for entry in missing:
+            handle.write(entry + "\n")
+    return missing
 
 
 def _init_sonarremedy_dir(target: str) -> dict[str, Any]:

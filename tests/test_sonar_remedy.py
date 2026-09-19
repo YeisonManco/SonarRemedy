@@ -880,7 +880,10 @@ class InitCommandTests(unittest.TestCase):
             for sub in ("queues", "runs", "temp"):
                 self.assertTrue(os.path.isdir(os.path.join(base, sub)))
             with open(os.path.join(d, ".gitignore"), encoding="utf-8") as fh:
-                self.assertIn(".sonarremedy/", fh.read())
+                gitignore = fh.read()
+            self.assertIn(".sonarremedy/", gitignore)
+            self.assertIn(".github/copilot-instructions.md", gitignore)
+            self.assertIn(".vscode/mcp.json", gitignore)
 
     def test_init_is_idempotent(self):
         with tempfile.TemporaryDirectory() as d:
