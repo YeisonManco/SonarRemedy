@@ -2,6 +2,22 @@
 
 All notable changes to SonarRemedy are documented here.
 
+## [0.2.8] - 2026-09-18
+
+### Added
+
+- **`rules` as an MCP tool** (`sonar_remedy_rules`) — the AI can list/manage the whitelist/blacklist when the user asks.
+
+### Fixed
+
+- **`update` auto-detects the clone** — `sonarremedy update` now works from any directory (prefers the module's own location), not only from the clone folder.
+- **Fetch with zero issues** — no longer crashes with `IndexError`; writes an empty export and reports `issues_total: 0`.
+- **Missing config** — `fetch` without a configured project now reports `config not found` (a clear `ConfigError`) instead of a raw `FileNotFoundError`.
+
+### Changed
+
+- **Copilot instructions + MCP descriptions** — disambiguated `scan_exclusions` (detect in code) vs `rules` (configured lists), so Copilot scans the code instead of just listing empty rules.
+
 ## [0.2.7] - 2026-09-18
 
 ### Added
