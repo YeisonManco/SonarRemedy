@@ -2,6 +2,12 @@
 
 All notable changes to SonarRemedy are documented here.
 
+## [0.7.4] - 2026-09-19
+
+### Fixed
+
+- **`init`/pack update caused false contamination** — the snapshot bound SonarRemedy's own setup files (`.sonarremedy/`, `.github/sonarremedy-instructions.md`, `.vscode/mcp.json`), which `init` re-writes on every update, so a barrier release and the integrate both reported `unexpected_target_write_or_stale_snapshot` after a harmless `init`. Those files are now excluded from the snapshot (`.github/copilot-instructions.md` stays bound — it holds the user's own merged instructions), so pack updates + `init` no longer invalidate a queue's binding.
+
 ## [0.7.3] - 2026-09-19
 
 ### Fixed

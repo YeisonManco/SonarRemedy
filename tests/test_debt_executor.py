@@ -229,6 +229,25 @@ class ExecutorTests(QueueFixture):
         self.assertFalse(any(part in ("bin", ".vs") for key in snap for part in key.split("/")))
         self.assertEqual(snap, e.snapshot(self.target))
 
+    def test_snapshot_excludes_sonarremedy_managed_files(self):
+        srdir = self.target / ".sonarremedy"
+        srdir.mkdir(parents=True)
+        (srdir / "version.json").write_text('{"version": "0.7.3"}\n')
+        ghdir = self.target / ".github"
+        ghdir.mkdir(parents=True)
+        (ghdir / "sonarremedy-instructions.md").write_text("full instructions")
+        (ghdir / "copilot-instructions.md").write_text("user team rules")
+        vscode = self.target / ".vscode"
+        vscode.mkdir(parents=True)
+        (vscode / "mcp.json").write_text("{}")
+        snap = e.snapshot(self.target)
+        self.assertTrue(any(key.endswith("a.cs") for key in snap))
+        # SonarRemedy's own files are not bound; the user's merged instructions ARE.
+        self.assertFalse(any(".sonarremedy" in key for key in snap))
+        self.assertNotIn(".github/sonarremedy-instructions.md", snap)
+        self.assertNotIn(".vscode/mcp.json", snap)
+        self.assertIn(".github/copilot-instructions.md", snap)
+
     def test_failed_build_persists_failure_receipt(self):
         self.configure()
         job = self.proposed()

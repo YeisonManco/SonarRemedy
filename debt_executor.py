@@ -33,7 +33,8 @@ def relative_name(name: str) -> str:
 
 
 def snapshot(root: Path) -> dict[str, str]:
-    """Hash the target sources; exclude Git metadata and regenerated outputs."""
+    """Hash the target sources; exclude Git metadata, regenerated outputs, and
+    SonarRemedy's own setup files."""
     root = q.local_path(root, exists=True)
     files, total, visited = {}, 0, 0
     # Machine-regenerated directories are not bound: build outputs are
@@ -41,10 +42,15 @@ def snapshot(root: Path) -> dict[str, str]:
     # every configure→build→integrate cycle look contaminated), IDE state is
     # locked while editors run, and none of them are legitimate fix targets.
     # Declared generated files stay governed by allowed_outputs instead.
-    volatile = {"bin", "obj", ".vs", ".idea", "TestResults", "node_modules"}
+    volatile = {"bin", "obj", ".vs", ".idea", "TestResults", "node_modules", ".sonarremedy"}
+    # SonarRemedy's own files are re-written by `init` on every pack update and
+    # are never a debt fix target; binding them makes the snapshot look
+    # "contaminated" after a harmless `init`. `.github/copilot-instructions.md`
+    # stays bound (it holds the user's own merged instructions).
+    managed = {".github/sonarremedy-instructions.md", ".vscode/mcp.json"}
     for base, dirs, names in os.walk(root, followlinks=False):
         if Path(base) == root:
-            dirs[:] = [name for name in dirs if name != ".git"]
+            dirs[:] = [name for name in dirs if name != ".git" and name not in volatile]
             names = [name for name in names if name != ".git"]
         dirs[:] = [name for name in dirs if name not in volatile]
         for name in sorted(dirs + names):
@@ -53,6 +59,8 @@ def snapshot(root: Path) -> dict[str, str]:
             if visited > 20000:
                 raise q.Blocked("target_snapshot_entry_budget")
             key = path.relative_to(root).as_posix()
+            if key in managed:
+                continue
             if path.is_dir():
                 files[key] = "directory"
             else:
