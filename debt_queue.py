@@ -1082,6 +1082,11 @@ class Queue:
             "savings": None,
         }
 
+    def identity(self, *, timeout: int = 10) -> dict[str, str]:
+        """Return the bound identity (root, branch, revision) without mutating."""
+        with self._open(timeout=timeout) as (connection, binding):
+            return {key: binding[key] for key in ("root", "branch", "revision")}
+
     def monitor(self, *, timeout: int = 10) -> dict[str, Any]:
         with self._open(timeout=timeout) as (connection, binding):
             return self._progress(connection, binding)

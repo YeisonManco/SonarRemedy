@@ -206,6 +206,78 @@ def _check(target: str) -> dict[str, Any]:
     return {"status": "up_to_date", "version": __version__}
 
 
+def _doctor(repo: str | None, state: str | None, project_dir: str) -> dict[str, Any]:
+    """Diagnose the setup + a queue's identity; return per-check status and fixes."""
+    checks: list[dict[str, Any]] = []
+
+    previous = _read_pack_version(project_dir)
+    if previous is None:
+        checks.append(
+            {
+                "name": "version",
+                "status": "warning",
+                "detail": "project not initialized",
+                "fix": "run `sonarremedy init`",
+            }
+        )
+    elif previous != __version__:
+        checks.append(
+            {
+                "name": "version",
+                "status": "warning",
+                "detail": f"project={previous}, pack={__version__}",
+                "fix": "run `sonarremedy init`",
+            }
+        )
+    else:
+        checks.append({"name": "version", "status": "ok", "detail": __version__})
+
+    if state:
+        import debt_queue
+
+        try:
+            work = debt_queue.Queue(state)
+            binding = work.identity()
+            if repo:
+                actual = debt_queue.git_identity(repo)
+                for key in ("root", "branch", "revision"):
+                    if actual.get(key) != binding[key]:
+                        checks.append(
+                            {
+                                "name": f"queue_identity.{key}",
+                                "status": "error",
+                                "detail": f"expected={binding[key]!r}, actual={actual.get(key)!r}",
+                                "fix": "re-slice the queue with the matching repo/branch/revision",
+                            }
+                        )
+                    else:
+                        checks.append(
+                            {
+                                "name": f"queue_identity.{key}",
+                                "status": "ok",
+                                "detail": binding[key],
+                            }
+                        )
+            else:
+                checks.append(
+                    {
+                        "name": "queue",
+                        "status": "info",
+                        "detail": (
+                            f"bound to {binding['root']} @ {binding['branch']} "
+                            f"({binding['revision'][:12]})"
+                        ),
+                    }
+                )
+        except Exception as error:
+            checks.append({"name": "queue", "status": "error", "detail": str(error)})
+
+    issues = [c for c in checks if c["status"] == "error"]
+    warnings = [c for c in checks if c["status"] == "warning"]
+    status = "error" if issues else ("warning" if warnings else "ok")
+    return {"status": status, "checks": checks}
+
+
 def _init_sonarremedy_dir(target: str) -> dict[str, Any]:
     """Create .sonarremedy/ (rules.json + generated subdirs); idempotent."""
     base = _sonarremedy_dir(target)
@@ -621,6 +693,12 @@ def main(argv: list[str] | None = None) -> int:
         "check", help="report whether the project's SonarRemedy setup is up to date"
     )
     check_cmd.add_argument("--dir", help="target project directory (default: current)")
+    doctor_cmd = commands.add_parser(
+        "doctor", help="diagnose the setup and a queue's identity (with fixes)"
+    )
+    doctor_cmd.add_argument("--dir", help="target project directory (default: current)")
+    doctor_cmd.add_argument("--state", help="queue directory to diagnose")
+    doctor_cmd.add_argument("--repo", help="local checkout to compare against the queue binding")
     rules_cmd = commands.add_parser("rules", help="manage exclusion rules (whitelist/blacklist)")
     rules_cmd.add_argument("--dir", help="target project directory (default: current)")
     rules_cmd.add_argument(
@@ -775,6 +853,10 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "check":
             target = os.path.abspath(args.dir or os.getcwd())
             print(json.dumps(_check(target), sort_keys=True))
+            return 0
+        if args.command == "doctor":
+            target = os.path.abspath(args.dir or os.getcwd())
+            print(json.dumps(_doctor(args.repo, args.state, target), sort_keys=True))
             return 0
         if args.command == "rules":
             import sonar_exclusions_report as report

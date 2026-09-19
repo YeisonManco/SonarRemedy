@@ -935,6 +935,15 @@ class InitCommandTests(unittest.TestCase):
             self.assertEqual(code, 0)
             self.assertIn("up_to_date", buf.getvalue())
 
+    def test_doctor_reports_version_check(self):
+        with tempfile.TemporaryDirectory() as d:
+            with contextlib.redirect_stdout(io.StringIO()) as buf:
+                code = sonar_remedy.main(["doctor", "--dir", d])
+            self.assertEqual(code, 0)
+            output = buf.getvalue()
+            self.assertIn("version", output)
+            self.assertIn("not initialized", output)
+
     def test_init_creates_sonarremedy_dir_and_rules(self):
         with tempfile.TemporaryDirectory() as d:
             with contextlib.redirect_stdout(io.StringIO()):
