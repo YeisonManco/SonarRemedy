@@ -3,6 +3,7 @@
 import ctypes
 import os
 import re
+import shutil
 import time
 import xml.etree.ElementTree as ET
 from collections.abc import Callable
@@ -304,6 +305,74 @@ class TargetBarrier:
             self.kernel.ReleaseMutex(self.handle)
             self.kernel.CloseHandle(self.handle)
             self.handle = None
+
+
+def release_barrier(
+    root: str | Path, *, execute: bool = False, control_root: str | Path | None = None
+) -> dict[str, Any]:
+    """Release an interrupted integration barrier, only on verified proof.
+
+    An orphaned `active.json` (a killed integrate) blocks every later run.
+    The recorded intent carries the pre-integration snapshot, so "nothing was
+    applied" is provable: release only when the current tree matches that
+    `before` snapshot exactly. Real quarantines, missing intents and any
+    mismatch stay blocked (fail closed); `--fix`-style `execute` is required
+    to touch anything.
+    """
+    target = Path(os.path.abspath(root))
+    control = Path(os.path.abspath(control_root)) if control_root else CONTROL_ROOT
+    folder = control / q.digest(str(target).casefold().encode())
+    active = folder / "active.json"
+    quarantine = folder / "quarantine.json"
+    if quarantine.is_file():
+        return {
+            "status": "blocked",
+            "reason": "real_quarantine_manual_review_required",
+            "fix": f"maintainer reviews {quarantine} and the queue; do not delete it here",
+        }
+    if not active.is_file():
+        return {"status": "ok", "reason": "no_active_barrier"}
+    try:
+        data = q.parse_json(q.read_bytes(active, q.MAX_EXPORT))
+        intent_path = Path(data["intent"])
+        intent = q.parse_json(q.read_bytes(intent_path, q.MAX_EXPORT))
+    except (q.Blocked, OSError, ValueError, KeyError, TypeError):
+        return {
+            "status": "blocked",
+            "reason": "barrier_intent_unavailable_manual_review_required",
+            "fix": f"inspect {active} and its intent manually",
+        }
+    before = intent.get("before")
+    if not isinstance(before, dict):
+        return {
+            "status": "blocked",
+            "reason": "barrier_intent_malformed_manual_review_required",
+            "fix": f"inspect {intent_path} manually",
+        }
+    try:
+        current = snapshot(target)
+    except (q.Blocked, OSError) as error:
+        return {
+            "status": "blocked",
+            "reason": "barrier_target_unavailable",
+            "fix": f"snapshot failed: {error}",
+        }
+    if current != before:
+        return {
+            "status": "blocked",
+            "reason": "barrier_tree_changed_manual_review_required",
+            "fix": "the tree differs from the pre-integration snapshot; inspect before releasing",
+        }
+    if not execute:
+        return {
+            "status": "blocked",
+            "reason": "verified_orphan_ready_to_release",
+            "fix": "re-run with execute=true to release the orphaned barrier",
+        }
+    integration = intent_path.parent
+    shutil.rmtree(integration, ignore_errors=False)
+    active.unlink()
+    return {"status": "released", "integration": str(integration)}
 
 
 def _allowed_changes(config: dict[str, Any]) -> set[str]:

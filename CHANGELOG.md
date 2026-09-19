@@ -2,6 +2,12 @@
 
 All notable changes to SonarRemedy are documented here.
 
+## [0.7.0] - 2026-09-19
+
+### Added
+
+- **Blessed barrier release** — an interrupted integrate left an orphaned `active.json` that blocked every later run with no legitimate recovery. `doctor --repo <path>` now reports it, and `doctor --repo <path> --fix` releases it **only** when the current tree matches the recorded pre-integration snapshot exactly (so "nothing was applied" is proven by the tool, not hand-deletion). Real quarantines, missing intents and any mismatch stay blocked with `manual_review_required`; nothing is touched without proof.
+
 ## [0.6.5] - 2026-09-19
 
 ### Fixed

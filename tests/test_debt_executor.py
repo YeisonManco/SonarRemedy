@@ -3,6 +3,7 @@
 import hashlib
 import os
 import sys
+import tempfile
 import time
 import unittest
 from pathlib import Path
@@ -479,3 +480,75 @@ class ChecksExampleTests(unittest.TestCase):
                 check["executable_sha256"] = exe_sha
             root = e.validate_config(example)
             self.assertEqual(str(root), str(q.canonical_case(d)))
+
+
+class BarrierReleaseTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.home = Path(self.tmp.name)
+        self.target = self.home / "target"
+        self.target.mkdir()
+        (self.target / "a.cs").write_text("class A {}\n", encoding="utf-8")
+        self.control = self.home / "control"
+        self.before = e.snapshot(self.target)
+
+    def _orphan(self, mutate=False):
+        job = self.home / "state" / "jobs" / "j1" / "attempts" / "a1"
+        integration = job / "integration"
+        integration.mkdir(parents=True)
+        (job / "job.json").write_text("{}", encoding="utf-8")
+        (job / "result.json").write_text("{}", encoding="utf-8")
+        (integration / "intent.json").write_text(
+            q.encoded({"job_id": "j1", "before": self.before, "write_paths": ["a.cs"]}).decode(),
+            encoding="utf-8",
+        )
+        folder = self.control / q.digest(str(self.target).casefold().encode())
+        folder.mkdir(parents=True)
+        (folder / "active.json").write_text(
+            q.encoded({"job_id": "j1", "intent": str(integration / "intent.json")}).decode(),
+            encoding="utf-8",
+        )
+        if mutate:
+            (self.target / "a.cs").write_text("class A { changed }\n", encoding="utf-8")
+        return folder
+
+    def test_nothing_to_release(self):
+        result = e.release_barrier(self.target, control_root=self.control)
+        self.assertEqual(result["status"], "ok")
+
+    def test_verified_orphan_releases_preserving_proposal(self):
+        folder = self._orphan()
+        dry = e.release_barrier(self.target, control_root=self.control)
+        self.assertEqual(dry["status"], "blocked")
+        self.assertIn("orphan", dry["reason"])
+        result = e.release_barrier(self.target, execute=True, control_root=self.control)
+        self.assertEqual(result["status"], "released")
+        self.assertFalse((folder / "active.json").exists())
+        attempt = self.home / "state" / "jobs" / "j1" / "attempts" / "a1"
+        self.assertFalse((attempt / "integration").exists())
+        self.assertTrue((attempt / "job.json").is_file())
+        self.assertTrue((attempt / "result.json").is_file())
+
+    def test_changed_tree_refuses_without_touching(self):
+        folder = self._orphan(mutate=True)
+        result = e.release_barrier(self.target, execute=True, control_root=self.control)
+        self.assertEqual(result["status"], "blocked")
+        self.assertIn("manual_review", result["reason"])
+        self.assertTrue((folder / "active.json").is_file())
+
+    def test_real_quarantine_is_never_released(self):
+        folder = self._orphan()
+        (folder / "quarantine.json").write_text("{}", encoding="utf-8")
+        result = e.release_barrier(self.target, execute=True, control_root=self.control)
+        self.assertEqual(result["status"], "blocked")
+        self.assertIn("quarantine", result["reason"])
+        self.assertTrue((folder / "active.json").is_file())
+
+    def test_missing_intent_refuses(self):
+        folder = self.control / q.digest(str(self.target).casefold().encode())
+        folder.mkdir(parents=True)
+        (folder / "active.json").write_text("{}", encoding="utf-8")
+        result = e.release_barrier(self.target, execute=True, control_root=self.control)
+        self.assertEqual(result["status"], "blocked")
+        self.assertTrue((folder / "active.json").is_file())

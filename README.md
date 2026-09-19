@@ -207,6 +207,7 @@ Don't hand-write it from scratch: `sonarremedy detect-checks --repo <path>` draf
 - Pack repos: suite + `ruff check` + `ruff format --check` (mirrors CI).
 - Managed projects: commands declared in `.sonarremedy-hooks.json` (`{"pre-push": [[...argv...]]}`); without it, the hook blocks with the exact shape to declare.
 - `doctor` verifies the hook (`git_hooks`: ok/missing/foreign/outdated) and `--fix` reinstalls it. A foreign hook is never overwritten.
+- `doctor --repo <path>` also detects an orphaned integration barrier (a killed integrate) and `--fix` releases it **only** when the tree matches the recorded pre-integration snapshot; real quarantines and mismatches stay blocked.
 - Enforcement travels with the pack: hook + harness + instructions need no server settings. Optionally, on repos you own, add branch protection (GitHub → Settings → Branches → rule for `main`: require status checks) as a server-side backstop.
 
 To save a project config non-interactively (for scripts), use:

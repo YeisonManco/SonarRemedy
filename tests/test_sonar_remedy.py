@@ -6,6 +6,7 @@ import json
 import os
 import tempfile
 import unittest
+from pathlib import Path
 from unittest import mock
 
 import sonar_fetch
@@ -1322,6 +1323,46 @@ class InitCommandTests(unittest.TestCase):
             output = buf.getvalue()
             self.assertIn("version", output)
             self.assertIn("not initialized", output)
+
+    def test_doctor_reports_and_fixes_orphaned_barrier(self):
+        import debt_executor
+        import debt_queue
+
+        with tempfile.TemporaryDirectory() as home:
+            target = os.path.join(home, "target")
+            os.makedirs(target)
+            with open(os.path.join(target, "a.cs"), "w", encoding="utf-8") as fh:
+                fh.write("class A {}\n")
+            before = debt_executor.snapshot(target)
+            control = os.path.join(home, "control")
+            folder = os.path.join(
+                control, debt_queue.digest(os.path.abspath(target).casefold().encode())
+            )
+            os.makedirs(folder)
+            intent_dir = os.path.join(home, "state", "jobs", "j1", "attempts", "a1", "integration")
+            os.makedirs(intent_dir)
+            with open(os.path.join(intent_dir, "intent.json"), "w", encoding="utf-8") as fh:
+                fh.write(
+                    debt_queue.encoded(
+                        {"job_id": "j1", "before": before, "write_paths": ["a.cs"]}
+                    ).decode()
+                )
+            with open(os.path.join(folder, "active.json"), "w", encoding="utf-8") as fh:
+                fh.write(
+                    debt_queue.encoded(
+                        {"job_id": "j1", "intent": os.path.join(intent_dir, "intent.json")}
+                    ).decode()
+                )
+            with mock.patch.object(debt_executor, "CONTROL_ROOT", Path(control)):
+                with contextlib.redirect_stdout(io.StringIO()) as buf:
+                    code = sonar_remedy.main(["doctor", "--repo", target, "--dir", home])
+                self.assertEqual(code, 0)
+                self.assertIn("barrier", buf.getvalue())
+                self.assertIn("orphaned", buf.getvalue())
+                with contextlib.redirect_stdout(io.StringIO()):
+                    code = sonar_remedy.main(["doctor", "--repo", target, "--dir", home, "--fix"])
+                self.assertEqual(code, 0)
+                self.assertFalse(os.path.isfile(os.path.join(folder, "active.json")))
 
     def test_doctor_fix_reinitializes_outdated_project(self):
         with tempfile.TemporaryDirectory() as d:

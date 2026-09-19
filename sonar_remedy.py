@@ -304,6 +304,31 @@ def _doctor(
             }
         )
 
+    if repo:
+        import debt_executor
+
+        barrier = debt_executor.release_barrier(repo, execute=False)
+        if barrier["status"] == "ok":
+            checks.append({"name": "barrier", "status": "ok", "detail": "no active barrier"})
+        elif barrier.get("reason") == "verified_orphan_ready_to_release":
+            checks.append(
+                {
+                    "name": "barrier",
+                    "status": "warning",
+                    "detail": "orphaned integration barrier, tree verified unchanged",
+                    "fix": "run `sonarremedy doctor --repo <path> --fix` to release it safely",
+                }
+            )
+        else:
+            checks.append(
+                {
+                    "name": "barrier",
+                    "status": "warning",
+                    "detail": barrier.get("reason", "unknown"),
+                    "fix": barrier.get("fix", "inspect the barrier manually"),
+                }
+            )
+
     if state:
         import debt_queue
 
@@ -414,6 +439,28 @@ def _doctor(
         if not setup_bad and not hooks_bad:
             checks.append(
                 {"name": "fix", "status": "info", "detail": "nothing safe to fix automatically"}
+            )
+
+        barrier_bad = any(
+            c["name"] == "barrier"
+            and c["status"] == "warning"
+            and c.get("detail") == "orphaned integration barrier, tree verified unchanged"
+            for c in checks
+        )
+        if barrier_bad and repo:
+            import debt_executor
+
+            released = debt_executor.release_barrier(repo, execute=True)
+            for check in checks:
+                if check["name"] == "barrier" and released.get("status") == "released":
+                    check["status"] = "ok"
+                    check["detail"] = "orphaned barrier released"
+            checks.append(
+                {
+                    "name": "fix_barrier",
+                    "status": "ok" if released.get("status") == "released" else "info",
+                    "detail": f"barrier release: {released.get('status')}",
+                }
             )
 
     issues = [c for c in checks if c["status"] == "error"]
