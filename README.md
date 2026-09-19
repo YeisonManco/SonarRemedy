@@ -190,6 +190,18 @@ sonarremedy autopilot --state <queue> --repo <path> --execute --integrate
 - Proposals stop at `awaiting_proposals` with each `proposal_path`; integrating stops at the configure gate until checks are explicitly bound (`configure --checks ... --approve-checks-sha256 ... --execute`).
 - The same flow is available to Copilot as the `sonar_remedy_autopilot` MCP tool.
 
+### Coverage jobs (per file)
+
+`fetch` now pulls per-file coverage from Sonar's component tree and turns each file with uncovered lines into a `coverage` job (`kind: "coverage"`, one per file, with `uncovered_lines`/`lines_to_cover`/`coverage`), so coverage is recoverable in measurable slices exactly like smells/security. Files at 100% are skipped; the lookup degrades gracefully (a token without coverage-tree access still fetches everything else, with a warning). The coverage hint (add a focused test for the uncovered lines) is already wired.
+
+### Duplication jobs + gate thresholds
+
+Duplication works the same way: `fetch` turns each duplicated file into a `duplication` job (`duplicated_lines`/`duplicated_blocks`/`duplicated_lines_density`). And `fetch` now reads the project's quality-gate conditions and reports them as `gate_conditions`, so the recovery TARGET is explicit (e.g. coverage ≥ 90, duplication < 5) instead of guessed.
+
+### Fetch one category at a time
+
+`sonar_remedy_fetch` accepts `kinds` (and `fetch` a `--kinds` flag) to pull only the sources you want — `smells`, `security`, `hotspots`, `coverage`, `duplication` — instead of everything at once. Ask for just coverage, just duplication, or just hotspots.
+
 ## Authoring checks.json (executor binding)
 
 Integration runs **only** the check commands you explicitly bind — nothing else executes on the target. Write them from `examples/debt-checks.example.json` (a template: the sha256 placeholder must be replaced, never invented) following `docs/checks-reference.md`:

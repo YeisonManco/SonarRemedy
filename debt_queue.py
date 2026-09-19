@@ -328,6 +328,16 @@ def plan(
                 for k in ("id", "kind", "path", "line", "rule")
                 if k in item and type(item[k]) in (str, int) and len(str(item[k])) <= 500
             }
+            # Coverage findings carry per-file metrics for the worker; preserve
+            # them (bounded ints + a finite percentage) so a coverage job knows
+            # its scale instead of guessing.
+            for metric in ("uncovered_lines", "lines_to_cover"):
+                if type(item.get(metric)) is int and 0 <= item[metric] <= 10_000_000:
+                    issue[metric] = item[metric]
+            if isinstance(item.get("coverage"), (int, float)):
+                coverage = float(item["coverage"])
+                if math.isfinite(coverage) and 0 <= coverage <= 100:
+                    issue["coverage"] = coverage
         kind = issue.get("kind") if issue.get("kind") in KINDS else "unknown"
         path = issue.get("path")
         try:

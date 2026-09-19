@@ -1,6 +1,7 @@
 """API→export bridge: plan Sonar debt for any stack already analyzed. No scan, no manual export."""
 
 import argparse
+import hashlib
 import json
 import math
 import os
@@ -11,11 +12,16 @@ from pathlib import Path
 from typing import Any
 from urllib.error import HTTPError
 
-from debtpack import MAX_ISSUES, PACK, read_json, token
+from debtpack import MAX_ISSUES, PACK, read_json, relative, token
 from sonar_client import Blocked, Client, endpoint, normalize, pages, pages_all
 from sonar_local import child_environment, redactor
 
 SEVERITIES = ("BLOCKER", "CRITICAL", "MAJOR", "MINOR", "INFO")
+# Granular fetch categories: which finding sources to pull. `smells` =
+# CODE_SMELL + BUG issues; `security` = VULNERABILITY issues; `hotspots` =
+# unreviewed security hotspots; `coverage` and `duplication` come from the
+# component tree.
+FETCH_KINDS = ("smells", "security", "hotspots", "coverage", "duplication")
 
 
 class Config:
@@ -31,6 +37,7 @@ class Config:
             "severities",
             "exclude_ids",
             "allow_http",
+            "kinds",
         }
         required = ("adapter", "repo", "url", "trusted_url", "project", "branch")
         if not isinstance(raw, dict) or set(raw) - allowed:
@@ -63,6 +70,25 @@ class Config:
             raise Blocked("timeout must be 1..3600 seconds")
         self.severities = self._severities(raw.get("severities"))
         self.exclude_ids = self._exclude_ids(raw.get("exclude_ids"))
+        self.kinds = self._kinds(raw.get("kinds"))
+
+    @staticmethod
+    def _kinds(value: list[str] | None) -> frozenset[str] | None:
+        # Optional granular fetch: pull only the requested finding sources.
+        # Absent (None) means all. Never widens what the API returns.
+        if value is None:
+            return None
+        if (
+            not isinstance(value, list)
+            or not value
+            or len(value) != len(set(value))
+            or any(kind not in FETCH_KINDS for kind in value)
+        ):
+            raise Blocked(
+                "kinds must be a non-empty list of unique known categories: "
+                + ",".join(FETCH_KINDS)
+            )
+        return frozenset(value)
 
     @staticmethod
     def _severities(value: str | None) -> str | None:
@@ -173,6 +199,186 @@ def chunk_issues(normalized: list[dict[str, Any]], chunk_size: int) -> list[list
     return [normalized[i : i + chunk_size] for i in range(0, len(normalized), chunk_size)]
 
 
+def coverage_files(get: Callable[..., Any], project: str, branch: str) -> list[dict[str, Any]]:
+    """Per-file coverage from the component tree; one entry per file with uncovered lines.
+
+    Returns `[{path, coverage, uncovered_lines, lines_to_cover}]` for files with
+    `uncovered_lines > 0`. Files at 100% coverage are omitted.
+    """
+    files: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for page in range(1, 21):
+        data = get(
+            "api/measures/component_tree",
+            component=project,
+            branch=branch,
+            metricKeys="coverage,uncovered_lines,lines_to_cover",
+            qualifiers="FIL",
+            p=page,
+            ps=100,
+        )
+        paging = data.get("paging", {})
+        total = paging.get("total")
+        batch = data.get("components")
+        if (
+            type(total) is not int
+            or not 0 <= total <= 100000
+            or not isinstance(batch, list)
+            or paging.get("pageIndex") != page
+        ):
+            raise Blocked("coverage tree pagination invalid")
+        for component in batch:
+            path = component.get("path")
+            if not isinstance(path, str) or not path or path in seen:
+                raise Blocked("coverage file missing, empty or repeated path")
+            relative(path)
+            seen.add(path)
+            values: dict[str, float] = {}
+            for measure in component.get("measures", []):
+                metric = measure.get("metric")
+                if metric not in ("coverage", "uncovered_lines", "lines_to_cover"):
+                    continue
+                try:
+                    values[metric] = float(measure["value"])
+                except (KeyError, ValueError, TypeError):
+                    raise Blocked("coverage metric has no numeric value") from None
+                if not math.isfinite(values[metric]) or values[metric] < 0:
+                    raise Blocked("invalid coverage metric value")
+            if set(values) != {"coverage", "uncovered_lines", "lines_to_cover"}:
+                raise Blocked("coverage metric missing or unexpected")
+            uncovered = values["uncovered_lines"]
+            if uncovered > 0:
+                files.append(
+                    {
+                        "path": path,
+                        "coverage": values["coverage"],
+                        "uncovered_lines": int(uncovered),
+                        "lines_to_cover": int(values["lines_to_cover"]),
+                    }
+                )
+        if len(seen) >= total:
+            return files
+    raise Blocked("coverage tree page budget exhausted")
+
+
+def coverage_issue(entry: dict[str, Any]) -> dict[str, Any]:
+    """Synthesize a `coverage` finding for a file with uncovered lines."""
+    digest = hashlib.sha256(entry["path"].encode("utf-8")).hexdigest()
+    return {
+        "id": "cov-" + digest[:24],
+        "kind": "coverage",
+        "path": entry["path"],
+        "line": 1,
+        "rule": "coverage:uncovered",
+        "uncovered_lines": entry["uncovered_lines"],
+        "lines_to_cover": entry["lines_to_cover"],
+        "coverage": entry["coverage"],
+    }
+
+
+def gate_conditions(get: Callable[..., Any], project: str) -> dict[str, dict[str, Any]]:
+    """Quality-gate thresholds per metric (the recovery target), degradable."""
+    data = get("api/qualitygates/get_by_project", project=project)
+    gate = data.get("qualityGate")
+    if not isinstance(gate, dict):
+        raise Blocked("quality gate shape unavailable")
+    conditions: dict[str, dict[str, Any]] = {}
+    for condition in gate.get("conditions", []):
+        metric = condition.get("metric")
+        op = condition.get("op")
+        error = condition.get("error")
+        if not isinstance(metric, str) or not metric or not isinstance(op, str) or not op:
+            raise Blocked("gate condition metric/op unavailable")
+        try:
+            value = float(error)
+        except (KeyError, ValueError, TypeError):
+            raise Blocked("gate condition error unavailable") from None
+        if not math.isfinite(value):
+            raise Blocked("gate condition error nonfinite")
+        conditions[metric] = {"op": op, "error": value}
+    return conditions
+
+
+def duplication_files(get: Callable[..., Any], project: str, branch: str) -> list[dict[str, Any]]:
+    """Per-file duplication from the component tree; one entry per duplicated file."""
+    files: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for page in range(1, 21):
+        data = get(
+            "api/measures/component_tree",
+            component=project,
+            branch=branch,
+            metricKeys="duplicated_lines,duplicated_blocks,duplicated_lines_density",
+            qualifiers="FIL",
+            p=page,
+            ps=100,
+        )
+        paging = data.get("paging", {})
+        total = paging.get("total")
+        batch = data.get("components")
+        if (
+            type(total) is not int
+            or not 0 <= total <= 100000
+            or not isinstance(batch, list)
+            or paging.get("pageIndex") != page
+        ):
+            raise Blocked("duplication tree pagination invalid")
+        for component in batch:
+            path = component.get("path")
+            if not isinstance(path, str) or not path or path in seen:
+                raise Blocked("duplication file missing, empty or repeated path")
+            relative(path)
+            seen.add(path)
+            values: dict[str, float] = {}
+            for measure in component.get("measures", []):
+                metric = measure.get("metric")
+                if metric not in (
+                    "duplicated_lines",
+                    "duplicated_blocks",
+                    "duplicated_lines_density",
+                ):
+                    continue
+                try:
+                    values[metric] = float(measure["value"])
+                except (KeyError, ValueError, TypeError):
+                    raise Blocked("duplication metric has no numeric value") from None
+                if not math.isfinite(values[metric]) or values[metric] < 0:
+                    raise Blocked("invalid duplication metric value")
+            if set(values) != {
+                "duplicated_lines",
+                "duplicated_blocks",
+                "duplicated_lines_density",
+            }:
+                raise Blocked("duplication metric missing or unexpected")
+            if values["duplicated_lines"] > 0:
+                files.append(
+                    {
+                        "path": path,
+                        "duplicated_lines": int(values["duplicated_lines"]),
+                        "duplicated_blocks": int(values["duplicated_blocks"]),
+                        "duplicated_lines_density": values["duplicated_lines_density"],
+                    }
+                )
+        if len(seen) >= total:
+            return files
+    raise Blocked("duplication tree page budget exhausted")
+
+
+def duplication_issue(entry: dict[str, Any]) -> dict[str, Any]:
+    """Synthesize a `duplication` finding for a file with duplicated lines."""
+    digest = hashlib.sha256(entry["path"].encode("utf-8")).hexdigest()
+    return {
+        "id": "dup-" + digest[:24],
+        "kind": "duplication",
+        "path": entry["path"],
+        "line": 1,
+        "rule": "duplication:duplicated",
+        "duplicated_lines": entry["duplicated_lines"],
+        "duplicated_blocks": entry["duplicated_blocks"],
+        "duplicated_lines_density": entry["duplicated_lines_density"],
+    }
+
+
 def fetch(config: Config, output: str | Path) -> dict[str, Any]:
     secret = os.environ.get("SONAR_TOKEN", "")
     if not secret or secret.strip() != secret or any(ord(x) < 33 for x in secret):
@@ -221,10 +427,14 @@ def fetch(config: Config, output: str | Path) -> dict[str, Any]:
     if gate not in ("OK", "ERROR"):
         raise Blocked("quality gate unavailable")
     found = measures(get, config.project, config.branch)
+    kinds = set(FETCH_KINDS) if config.kinds is None else set(config.kinds)
     issue_params = {"componentKeys": config.project, "branch": config.branch, "resolved": "false"}
     if config.severities is not None:
         issue_params["severities"] = config.severities
-    issues = pages_all(get, "api/issues/search", "issues", issue_params)
+    if kinds & {"smells", "security"}:
+        issues = pages_all(get, "api/issues/search", "issues", issue_params)
+    else:
+        issues = []
     excluded_count = 0
     if config.exclude_ids is not None:
         before = len(issues)
@@ -236,11 +446,15 @@ def fetch(config: Config, output: str | Path) -> dict[str, Any]:
     # the export then contains issues only.
     hotspots_warning = None
     try:
-        hotspots = pages(
-            get,
-            "api/hotspots/search",
-            "hotspots",
-            {"projectKey": config.project, "branch": config.branch},
+        hotspots = (
+            pages(
+                get,
+                "api/hotspots/search",
+                "hotspots",
+                {"projectKey": config.project, "branch": config.branch},
+            )
+            if "hotspots" in kinds
+            else []
         )
     except (Blocked, HTTPError) as error:
         hotspots_warning = f"hotspot lookup blocked ({str(error)}); unreviewed hotspots unknown"
@@ -257,7 +471,8 @@ def fetch(config: Config, output: str | Path) -> dict[str, Any]:
         )
         if not kind:
             raise Blocked("unsupported issue taxonomy; explicit adapter update required")
-        normalized.append(normalize(item, config.project, kind))
+        if kind in kinds:
+            normalized.append(normalize(item, config.project, kind))
     unreviewed = None if hotspots_warning is not None else 0
     for item in hotspots:
         status, resolution = item.get("status"), item.get("resolution")
@@ -270,6 +485,32 @@ def fetch(config: Config, output: str | Path) -> dict[str, Any]:
                 deferred_no_line += 1
         elif status != "REVIEWED" or resolution not in ("SAFE", "FIXED"):
             raise Blocked("hotspot disposition unresolved or unsupported")
+    # Per-file coverage -> coverage jobs (degradable like hotspots: a token that
+    # cannot read the component tree still fetches issues/measures/gate).
+    coverage_warning = None
+    try:
+        if "coverage" in kinds:
+            for entry in coverage_files(get, config.project, config.branch):
+                normalized.append(coverage_issue(entry))
+    except (Blocked, HTTPError) as error:
+        coverage_warning = f"coverage tree lookup blocked ({str(error)}); coverage jobs skipped"
+    # Per-file duplication -> duplication jobs (same degradability).
+    duplication_warning = None
+    try:
+        if "duplication" in kinds:
+            for entry in duplication_files(get, config.project, config.branch):
+                normalized.append(duplication_issue(entry))
+    except (Blocked, HTTPError) as error:
+        duplication_warning = (
+            f"duplication tree lookup blocked ({str(error)}); duplication jobs skipped"
+        )
+    # Quality-gate thresholds (the recovery target); degradable too.
+    gate_conditions_warning = None
+    gate_conditions_result: dict[str, dict[str, Any]] = {}
+    try:
+        gate_conditions_result = gate_conditions(get, config.project)
+    except (Blocked, HTTPError) as error:
+        gate_conditions_warning = f"gate conditions lookup blocked ({str(error)})"
     chunks = chunk_issues(normalized, MAX_ISSUES) or [[]]
     export_paths = []
     for idx, chunk in enumerate(chunks):
@@ -322,6 +563,12 @@ def fetch(config: Config, output: str | Path) -> dict[str, Any]:
         warnings.append(
             "working tree is not clean; export binds the analyzed revision, not uncommitted edits"
         )
+    if coverage_warning:
+        warnings.append(coverage_warning)
+    if duplication_warning:
+        warnings.append(duplication_warning)
+    if gate_conditions_warning:
+        warnings.append(gate_conditions_warning)
     # Compact only: never leak issue lists or raw evidence into model context.
     result = {
         "status": "collected",
@@ -341,6 +588,7 @@ def fetch(config: Config, output: str | Path) -> dict[str, Any]:
         },
         "issues_total": len(normalized),
         "issues_by_kind": kinds,
+        "gate_conditions": gate_conditions_result,
         "deferred_no_line": deferred_no_line,
         "unreviewed_hotspots": unreviewed,
         "warnings": warnings,

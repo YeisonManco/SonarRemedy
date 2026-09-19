@@ -23,20 +23,23 @@ except PackageNotFoundError:  # running from source without an install
     __version__ = "dev"
 
 
-def build_fetch_config(rcfg: dict[str, Any], repo: str) -> sonar_fetch.Config:
+def build_fetch_config(
+    rcfg: dict[str, Any], repo: str, kinds: list[str] | None = None
+) -> sonar_fetch.Config:
     """Map a persisted SonarRemedy config to sonar_fetch's API Config."""
     url = rcfg["sonar"]["url"]
-    return sonar_fetch.Config(
-        {
-            "adapter": "api",
-            "repo": repo,
-            "url": url,
-            "trusted_url": url,
-            "project": rcfg["sonar"]["project_key"],
-            "branch": rcfg["repository"]["main_branch"],
-            "allow_http": rcfg["sonar"].get("allow_http", False),
-        }
-    )
+    raw = {
+        "adapter": "api",
+        "repo": repo,
+        "url": url,
+        "trusted_url": url,
+        "project": rcfg["sonar"]["project_key"],
+        "branch": rcfg["repository"]["main_branch"],
+        "allow_http": rcfg["sonar"].get("allow_http", False),
+    }
+    if kinds is not None:
+        raw["kinds"] = kinds
+    return sonar_fetch.Config(raw)
 
 
 def _default_output(project: str | None = None) -> str:
@@ -1102,6 +1105,12 @@ def main(argv: list[str] | None = None) -> int:
     fetch = commands.add_parser("fetch", help="collect Sonar issues using the persisted config")
     fetch.add_argument("--repo", help="local main checkout (overrides repository.local_path)")
     fetch.add_argument("--output", help="output directory (outside the repo)")
+    fetch.add_argument(
+        "--kinds",
+        help="comma-separated finding categories to pull: "
+        + ",".join(sonar_fetch.FETCH_KINDS)
+        + " (default: all)",
+    )
     slice_cmd = commands.add_parser(
         "slice", help="create the durable queue from an export using the persisted config"
     )
@@ -1435,7 +1444,8 @@ def main(argv: list[str] | None = None) -> int:
             if not os.environ.get(token_env):
                 raise rc.ConfigError(f"{token_env} must be present in the environment")
             output = args.output or _default_output(args.project)
-            result = sonar_fetch.fetch(build_fetch_config(rcfg, repo), output)
+            kinds = args.kinds.split(",") if args.kinds else None
+            result = sonar_fetch.fetch(build_fetch_config(rcfg, repo, kinds), output)
             print(json.dumps(result, indent=2, sort_keys=True))
             return 0 if result.get("status") == "collected" else 2
         if args.command == "slice":

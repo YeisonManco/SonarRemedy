@@ -124,6 +124,27 @@ class IntakeTests(QueueFixture):
         self.assertTrue(all(e["status"] == "deferred" for e in entries[:3]))
         self.assertEqual(entries[3]["status"], "pending")
 
+    def test_coverage_job_preserves_metrics(self):
+        cov = {
+            "id": "cov-abc123",
+            "path": "a.cs",
+            "kind": "coverage",
+            "line": 1,
+            "rule": "coverage:uncovered",
+            "uncovered_lines": 10,
+            "lines_to_cover": 20,
+            "coverage": 50.0,
+        }
+        self.write_export([cov])
+        preview = q.plan(self.target, self.export, "feature/queue")
+        jobs = [j for j in preview["jobs"] if j["kind"] == "coverage"]
+        self.assertEqual(len(jobs), 1)
+        issue = jobs[0]["issues"][0]
+        self.assertEqual(issue["uncovered_lines"], 10)
+        self.assertEqual(issue["lines_to_cover"], 20)
+        self.assertEqual(issue["coverage"], 50.0)
+        self.assertEqual(issue["kind"], "coverage")
+
     def test_every_unusable_entry_is_visible_without_raw_messages(self):
         missing = self.issue("S2")
         missing.pop("rule")

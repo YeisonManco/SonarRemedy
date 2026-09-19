@@ -45,6 +45,12 @@ class ToolRegistryTests(unittest.TestCase):
         argv = mcp.build_argv("sonar_remedy_fetch", {"project": "doc", "repo": "C:/r"})
         self.assertEqual(argv, ["--project", "doc", "fetch", "--repo", "C:/r"])
 
+    def test_build_argv_fetch_with_kinds(self):
+        argv = mcp.build_argv(
+            "sonar_remedy_fetch", {"repo": "C:/r", "kinds": ["coverage", "duplication"]}
+        )
+        self.assertEqual(argv, ["fetch", "--repo", "C:/r", "--kinds", "coverage,duplication"])
+
     def test_build_argv_status(self):
         self.assertEqual(
             mcp.build_argv("sonar_remedy_status", {"state": "C:/q"}), ["status", "--state", "C:/q"]

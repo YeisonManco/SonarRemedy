@@ -2,6 +2,25 @@
 
 All notable changes to SonarRemedy are documented here.
 
+## [0.8.2] - 2026-09-19
+
+### Added
+
+- **Granular fetch by category** — `fetch` (CLI `--kinds`, MCP `sonar_remedy_fetch.kinds`) now pulls only the requested finding sources: `smells`, `security`, `hotspots`, `coverage`, `duplication` (comma-separated, default all). So you can fetch just coverage, just duplication, just hotspots, or any combination — without pulling the rest.
+
+## [0.8.1] - 2026-09-19
+
+### Added
+
+- **Quality-gate thresholds** — `fetch` now reads the project's quality gate conditions (`api/qualitygates/get_by_project`) and reports them as `gate_conditions` (per metric: `op` + `error`), so the harness and the AI know the recovery TARGET (e.g. coverage ≥ 90, duplication < 5), not just the current value. Degradable with a warning.
+- **Duplication as measurable jobs** — `fetch` pulls per-file duplication (`duplicated_lines`, `duplicated_blocks`, `duplicated_lines_density`) and synthesizes a `duplication` finding per duplicated file, so `slice` produces one measurable `duplication` job per file. Degradable like coverage.
+
+## [0.8.0] - 2026-09-19
+
+### Added
+
+- **Coverage as measurable jobs** — `fetch` now pulls per-file coverage from the component tree (`api/measures/component_tree`) and synthesizes a `coverage` finding per file with uncovered lines (`uncovered_lines`, `lines_to_cover`, `coverage`), so `slice` produces one measurable `coverage` job per file instead of none. Files at 100% are skipped; the lookup is degradable like hotspots (a token that can't read the tree still fetches issues/measures/gate, with a `coverage tree` warning and zero invented jobs).
+
 ## [0.7.5] - 2026-09-19
 
 ### Fixed

@@ -107,6 +107,19 @@ class FetchTests(unittest.TestCase):
                     }
                 ],
             },
+            "api/measures/component_tree": {
+                "paging": {"pageIndex": 1, "pageSize": 100, "total": 0},
+                "components": [],
+            },
+            "api/qualitygates/get_by_project": {
+                "qualityGate": {
+                    "name": "default",
+                    "conditions": [
+                        {"metric": "coverage", "op": "LT", "error": "90"},
+                        {"metric": "duplicated_lines_density", "op": "GT", "error": "5"},
+                    ],
+                }
+            },
             "api/rules/search": {
                 "total": 3,
                 "p": 1,
@@ -202,6 +215,13 @@ class FetchTests(unittest.TestCase):
         )
         self.assertEqual(result["issues_total"], 4)
         self.assertEqual(result["issues_by_kind"], {"smells": 2, "security": 2})
+        self.assertEqual(
+            result["gate_conditions"],
+            {
+                "coverage": {"op": "LT", "error": 90.0},
+                "duplicated_lines_density": {"op": "GT", "error": 5.0},
+            },
+        )
         self.assertEqual(result["unreviewed_hotspots"], 1)
         self.assertEqual(result["warnings"], [])
         self.assertNotIn("issues", result)
@@ -429,6 +449,132 @@ class FetchTests(unittest.TestCase):
         self.assertEqual(result["status"], "collected")
         self.assertEqual(result["deferred_no_line"], 1)
         self.assertEqual(result["issues_total"], 3)
+
+    def test_fetch_synthesizes_coverage_jobs_from_tree(self):
+        self.responses["api/measures/component_tree"] = {
+            "paging": {"pageIndex": 1, "pageSize": 100, "total": 2},
+            "components": [
+                {
+                    "key": "fixture:src/A.cs",
+                    "path": "src/A.cs",
+                    "qualifier": "FIL",
+                    "measures": [
+                        {"metric": "coverage", "value": "50.0"},
+                        {"metric": "uncovered_lines", "value": "10"},
+                        {"metric": "lines_to_cover", "value": "20"},
+                    ],
+                },
+                {
+                    "key": "fixture:src/C.cs",
+                    "path": "src/C.cs",
+                    "qualifier": "FIL",
+                    "measures": [
+                        {"metric": "coverage", "value": "100.0"},
+                        {"metric": "uncovered_lines", "value": "0"},
+                        {"metric": "lines_to_cover", "value": "30"},
+                    ],
+                },
+            ],
+        }
+        with patch.object(f, "git_dirty", return_value=False):
+            result = self.fetch()
+        self.assertEqual(result["issues_by_kind"].get("coverage"), 1)
+        self.assertNotIn("coverage_warning", result)
+        export = json.loads((self.root / "runs" / "export.json").read_text(encoding="utf-8"))
+        coverage = [i for i in export["issues"] if i["kind"] == "coverage"]
+        self.assertEqual(len(coverage), 1)
+        self.assertEqual(coverage[0]["path"], "src/A.cs")
+        self.assertEqual(coverage[0]["rule"], "coverage:uncovered")
+        self.assertEqual(coverage[0]["uncovered_lines"], 10)
+        self.assertEqual(coverage[0]["lines_to_cover"], 20)
+        self.assertEqual(coverage[0]["coverage"], 50.0)
+
+    def test_coverage_tree_403_degrades_to_no_coverage_jobs(self):
+        def get(path, **params):
+            if path == "api/measures/component_tree":
+                raise f.Blocked("coverage unavailable")
+            return copy.deepcopy(self.responses[path])
+
+        with patch.object(f, "git_dirty", return_value=False):
+            result = self.fetch(get=get)
+        self.assertEqual(result["issues_by_kind"].get("coverage", 0), 0)
+        self.assertTrue(any("coverage tree" in w for w in result["warnings"]))
+
+    def test_fetch_synthesizes_duplication_jobs_from_tree(self):
+        dup_tree = {
+            "paging": {"pageIndex": 1, "pageSize": 100, "total": 1},
+            "components": [
+                {
+                    "key": "fixture:src/B.cs",
+                    "path": "src/B.cs",
+                    "qualifier": "FIL",
+                    "measures": [
+                        {"metric": "duplicated_lines", "value": "12"},
+                        {"metric": "duplicated_blocks", "value": "3"},
+                        {"metric": "duplicated_lines_density", "value": "8.5"},
+                    ],
+                }
+            ],
+        }
+
+        def get(path, **params):
+            if path == "api/measures/component_tree" and "duplicated" in params.get(
+                "metricKeys", ""
+            ):
+                return copy.deepcopy(dup_tree)
+            return copy.deepcopy(self.responses[path])
+
+        with patch.object(f, "git_dirty", return_value=False):
+            result = self.fetch(get=get)
+        self.assertEqual(result["issues_by_kind"].get("duplication"), 1)
+        export = json.loads((self.root / "runs" / "export.json").read_text(encoding="utf-8"))
+        dup = [i for i in export["issues"] if i["kind"] == "duplication"]
+        self.assertEqual(len(dup), 1)
+        self.assertEqual(dup[0]["path"], "src/B.cs")
+        self.assertEqual(dup[0]["rule"], "duplication:duplicated")
+        self.assertEqual(dup[0]["duplicated_lines"], 12)
+        self.assertEqual(dup[0]["duplicated_blocks"], 3)
+
+    def test_gate_conditions_403_degrades(self):
+        def get(path, **params):
+            if path == "api/qualitygates/get_by_project":
+                raise f.Blocked("gate unavailable")
+            return copy.deepcopy(self.responses[path])
+
+        with patch.object(f, "git_dirty", return_value=False):
+            result = self.fetch(get=get)
+        self.assertEqual(result["gate_conditions"], {})
+        self.assertTrue(any("gate conditions" in w for w in result["warnings"]))
+
+    def test_kinds_filters_export_to_requested_category(self):
+        self.responses["api/measures/component_tree"] = {
+            "paging": {"pageIndex": 1, "pageSize": 100, "total": 1},
+            "components": [
+                {
+                    "key": "fixture:src/A.cs",
+                    "path": "src/A.cs",
+                    "qualifier": "FIL",
+                    "measures": [
+                        {"metric": "coverage", "value": "50.0"},
+                        {"metric": "uncovered_lines", "value": "10"},
+                        {"metric": "lines_to_cover", "value": "20"},
+                    ],
+                }
+            ],
+        }
+        self.raw["kinds"] = ["coverage"]
+        self.config = f.Config(self.raw)
+        with patch.object(f, "git_dirty", return_value=False):
+            result = self.fetch()
+        self.assertEqual(result["issues_by_kind"], {"coverage": 1})
+        export = json.loads((self.root / "runs" / "export.json").read_text(encoding="utf-8"))
+        self.assertTrue(all(i["kind"] == "coverage" for i in export["issues"]))
+        self.assertEqual(len(export["issues"]), 1)
+
+    def test_invalid_kinds_rejected(self):
+        for bad in ([], ["nope"], ["coverage", "coverage"], "coverage", ["smells", "x"]):
+            with self.subTest(bad=bad), self.assertRaises(f.Blocked):
+                f.Config(dict(self.raw, kinds=bad))
 
     def test_fetch_with_zero_issues_writes_empty_export(self):
         def get(path, **params):

@@ -15,13 +15,20 @@ import sonar_remedy
 TOOLS = [
     {
         "name": "sonar_remedy_fetch",
-        "description": "Fetch Sonar issues for a project into an export (chunked if over budget).",
+        "description": "Fetch Sonar findings for a project into an export (chunked if over budget). Use `kinds` to pull only some categories: smells, security, hotspots, coverage, duplication (default all).",
         "inputSchema": {
             "type": "object",
             "properties": {
                 "project": {"type": "string"},
                 "repo": {"type": "string"},
                 "output": {"type": "string"},
+                "kinds": {
+                    "type": "array",
+                    "items": {
+                        "type": "string",
+                        "enum": ["smells", "security", "hotspots", "coverage", "duplication"],
+                    },
+                },
             },
         },
     },
@@ -271,7 +278,11 @@ def build_argv(name: str, arguments: dict[str, Any] | None) -> list[str]:
     a = arguments or {}
     g = _global(a)
     if name == "sonar_remedy_fetch":
-        return g + ["fetch"] + _opt("--repo", a.get("repo")) + _opt("--output", a.get("output"))
+        argv = g + ["fetch"] + _opt("--repo", a.get("repo")) + _opt("--output", a.get("output"))
+        kinds = a.get("kinds")
+        if kinds:
+            argv += ["--kinds", ",".join(kinds)]
+        return argv
     if name == "sonar_remedy_slice":
         return (
             g
