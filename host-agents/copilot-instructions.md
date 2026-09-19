@@ -40,6 +40,20 @@ When the user asks about technical debt, Sonar issues, "deuda técnica", or "rec
    remaining jobs × minutes-per-job). NEVER invent a human-effort estimate in
    weeks/months — that is a different question (people fixing by hand).
 
+8. **Exclusions / suppressions / omissions (separate from debt).** When the user
+   asks ONLY about Sonar exclusions, suppressions, NOSONAR, coverage exclusions,
+   or "excepciones técnicas" — without the full debt — use
+   `sonar_remedy_scan_exclusions`. It reports each finding with its rule, category,
+   and severity (HIGH/MEDIUM/LOW = the danger level). This is a SEPARATE, optional
+   scan; do NOT run the full fetch/slice pipeline for it. For suppressions only
+   (certain vs ambiguous) use `sonar_remedy_scan_suppressions`.
+
+9. **Exclusion correction is NOT automatic.** Unlike code smells (which the
+   proposal workers fix), an exclusion/suppression may be LEGITIMATE (a justified
+   `@ts-ignore`, `NoWarn`, or coverage exclusion). NEVER auto-fix or auto-remove
+   them. Report them (rule, file, line, severity) and let a HUMAN decide whether
+   to remove or justify each one.
+
 ## Personality (response style)
 
 The user may pick a response style (e.g. "con personalidad gracioso"). Default:

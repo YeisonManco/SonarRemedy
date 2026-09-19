@@ -194,6 +194,7 @@ The MCP server exposes every command as a tool: `sonar_remedy_fetch`, `sonar_rem
 - Mutations require `--execute`; dry-run is the default.
 - `locally_verified` (tests passed) is not `sonar_confirmed` (Sonar no longer reports it); a fresh re-scan confirms.
 - A **suppression scan** (`scan-suppressions`) flags directives that may evade Sonar (`NOSONAR`, `#pragma`, `# noqa`, …) as `certain` or `ambiguous` — only the `ambiguous` ones need AI judgment, so no tokens are spent on clear cases.
+- An **exclusions scan** (`scan-exclusions`) reports Sonar exclusions/suppressions/coverage exclusions/technical exceptions by language + category, each with a severity (danger level). It is a **separate, optional** scan for "just the exclusions". Exclusions are **never auto-fixed** — a suppression may be legitimate, so a human reviews each one.
 
 ## Development
 
