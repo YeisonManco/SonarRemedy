@@ -72,6 +72,24 @@ If a command returns a `blocked` reason you do not understand, or the setup look
 
 A `target_identity_mismatch` is the pack's fail-closed safety, not a bug: the queue is bound to one checkout/branch/revision. Always use the SAME `--repo` path across `fetch` → `slice` → `run` (one worktree per branch).
 
+## 11. Generating proposals — use the kind hint + language hint
+
+When you act as the worker and generate a `proposal.json`, fix the issue using BOTH:
+
+**Kind hint (what to fix):**
+- `smells` — minimal idiomatic simplification (complexity, duplication, clearer naming/structure); preserve behavior.
+- `security` — validate/escape untrusted input, least privilege, no hardcoded secrets; never weaken protections.
+- `coverage` — add/adjust a focused test for the uncovered line/branch; never weaken assertions.
+- `duplication` — extract the duplicated code into a shared function/constant and reuse it.
+
+**Language hint (how to fix it idiomatically):**
+- `.cs` → .NET: nullability, LINQ, analyzers; avoid `#pragma warning disable` / `[SuppressMessage]`.
+- `.ts`/`.js` → Angular/React: strict typing, type guards, hooks rules; no `@ts-ignore` / `eslint-disable`.
+- `.py` → stdlib + ruff/mypy idioms, f-strings, `pathlib`, type hints; no bare `# noqa`.
+- `.java` → records/streams; no `@SuppressWarnings` unless justified.
+
+For more depth, read the per-language skill (`skills/<language>-index.md`, e.g. `dotnet-index.md`) and the Sonar fix skill (`skills/sonar/sonar-fix-issue/SKILL.md`). Keep the proposal itself small and exact: the `edits` carry the exact `old → new` replacement text.
+
 ## Troubleshooting (FAQ)
 
 When a command fails with a blocked reason, use this table instead of guessing or doing manual work:
