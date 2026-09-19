@@ -141,6 +141,8 @@ def save(cfg: dict[str, Any], path: str) -> None:
 
 def load(path: str) -> dict[str, Any]:
     """Read and validate a config file."""
+    if not os.path.isfile(path):
+        raise ConfigError("config not found: " + path)
     with open(path, encoding="utf-8") as handle:
         data = json.load(handle)
     errors = validate(data)

@@ -270,7 +270,7 @@ def fetch(config: Config, output: str | Path) -> dict[str, Any]:
                 deferred_no_line += 1
         elif status != "REVIEWED" or resolution not in ("SAFE", "FIXED"):
             raise Blocked("hotspot disposition unresolved or unsupported")
-    chunks = chunk_issues(normalized, MAX_ISSUES)
+    chunks = chunk_issues(normalized, MAX_ISSUES) or [[]]
     export_paths = []
     for idx, chunk in enumerate(chunks):
         path = (output / "export.json") if len(chunks) == 1 else (output / f"chunk-{idx}.json")

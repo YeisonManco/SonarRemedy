@@ -123,6 +123,10 @@ class SaveLoadTests(unittest.TestCase):
         rc.save(cfg, self.path)
         self.assertEqual(rc.load(self.path), cfg)
 
+    def test_load_missing_file_raises_config_error(self):
+        with self.assertRaises(rc.ConfigError):
+            rc.load(os.path.join(self.tmp.name, "missing.json"))
+
     def test_save_rejects_invalid(self):
         with self.assertRaises(rc.ConfigError):
             rc.save(_valid_config(provider="bogus"), self.path)

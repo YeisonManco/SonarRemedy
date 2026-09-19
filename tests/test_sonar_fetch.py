@@ -430,6 +430,24 @@ class FetchTests(unittest.TestCase):
         self.assertEqual(result["deferred_no_line"], 1)
         self.assertEqual(result["issues_total"], 3)
 
+    def test_fetch_with_zero_issues_writes_empty_export(self):
+        def get(path, **params):
+            if path == "api/issues/search":
+                return copy.deepcopy(
+                    {"paging": {"pageIndex": 1, "pageSize": 100, "total": 0}, "issues": []}
+                )
+            if path == "api/hotspots/search":
+                return copy.deepcopy(
+                    {"paging": {"pageIndex": 1, "pageSize": 100, "total": 0}, "hotspots": []}
+                )
+            return copy.deepcopy(self.responses[path])
+
+        with patch.object(f, "git_dirty", return_value=False):
+            result = self.fetch(get=get)
+        self.assertEqual(result["status"], "collected")
+        self.assertEqual(result["issues_total"], 0)
+        self.assertEqual(len(result["exports"]), 1)
+
     def test_pagination_inconsistency_blocks(self):
         items = [
             {
