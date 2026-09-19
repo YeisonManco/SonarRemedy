@@ -11,6 +11,8 @@ For technical debt, Sonar issues, "deuda técnica", or "recuperá la deuda", ALW
 
 Only if the human EXPLICITLY says "no uses SonarRemedy" (or similar) may you do the work yourself. If the human asked you to use SonarRemedy, using it is not optional.
 
+If integration is blocked for missing reviewed checks (`reviewed_execution_config_required`): run detection (`sonar_remedy_detect_checks` with the repo), present the draft plus the `missing` list to the human, and ASK for the judgments (policy/reason or failing-test markers). Never invent exe paths, hashes, or markers.
+
 ## 1. Never read the source
 
 NEVER read the SonarRemedy source code — not `sonar_remedy*.py`, `debt_*.py`, `sonar_*.py`, nor any file inside the pack. The MCP tools are the only interface: call them, do not inspect how they are implemented. Likewise, DO NOT analyze the target project's code manually (no reading files, no grep, no "let me check the code", no own diagnosis).

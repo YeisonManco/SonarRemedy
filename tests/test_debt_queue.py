@@ -694,3 +694,22 @@ class CanonicalCaseTests(unittest.TestCase):
             repaired = q.canonical_case(str(Path(d) / "aBc" / "nope" / "queue.sqlite3"))
             self.assertEqual(repaired.name, "queue.sqlite3")
             self.assertEqual(repaired.parent.parent.name, "AbC")
+
+    def test_repairs_short_name_alias(self):
+        import ctypes
+
+        with tempfile.TemporaryDirectory() as d:
+            target = Path(d) / "LongDirectoryNameHere"
+            target.mkdir()
+            (target / "AbC").mkdir()
+            get_short = ctypes.windll.kernel32.GetShortPathNameW
+            buf = ctypes.create_unicode_buffer(260)
+            short = buf.value if get_short(str(target), buf, len(buf)) > 0 else str(target)
+            if short == str(target):
+                self.skipTest("no short-name alias on this volume")
+            aliased = str(Path(short) / "aBc")
+            with self.assertRaises(q.Blocked):
+                q.local_path(aliased, exists=True)
+            repaired = q.canonical_case(aliased)
+            self.assertEqual(repaired.name, "AbC")
+            self.assertEqual(q.local_path(repaired, exists=True), repaired)

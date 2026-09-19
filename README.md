@@ -186,6 +186,8 @@ Integration runs **only** the check commands you explicitly bind — nothing els
 2. Dry-run first: `sonarremedy configure --state <queue> --repo <path> --checks <file>` — validates the shape and prints `checks_sha256` without writing.
 3. Review it yourself, then approve: repeat with `--approve-checks-sha256 <digest> --execute`.
 
+Don't hand-write it from scratch: `sonarremedy detect-checks --repo <path>` drafts it from the repo (solution, test projects, `dotnet` + real sha256) and tells you the 1–2 judgments to complete (same flow as `sonar_remedy_detect_checks`).
+
 ## Commit gate (pre-push hook)
 
 `init` installs a pre-push hook into the project's `.git/hooks`, so broken code cannot be pushed: the hook runs the project's gates and blocks the push on red. Never use `--no-verify`.

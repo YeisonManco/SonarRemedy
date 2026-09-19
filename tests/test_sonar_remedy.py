@@ -719,6 +719,87 @@ class RunAllCommandTests(unittest.TestCase):
         self.assertEqual(code, 2)
 
 
+class DetectChecksTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.repo = os.path.join(self.tmp.name, "target")
+        os.makedirs(os.path.join(self.repo, "tests"))
+        with open(os.path.join(self.repo, "app.sln"), "w", encoding="utf-8") as fh:
+            fh.write("sln\n")
+        with open(
+            os.path.join(self.repo, "tests", "App.Tests.csproj"), "w", encoding="utf-8"
+        ) as fh:
+            fh.write("csproj\n")
+        self.bindir = os.path.join(self.tmp.name, "bin")
+        os.makedirs(self.bindir)
+        self.exe = os.path.join(self.bindir, "dotnet.exe")
+        with open(self.exe, "wb") as fh:
+            fh.write(b"fake-dotnet")
+        self.path = self.bindir + os.pathsep + os.environ.get("PATH", "")
+
+    def _run_cli(self, argv):
+        with contextlib.redirect_stdout(io.StringIO()) as buf:
+            code = sonar_remedy.main(argv)
+        return code, buf.getvalue()
+
+    def test_detects_dotnet_solution_tests_and_exe(self):
+        import hashlib
+
+        with mock.patch.dict(os.environ, {"PATH": self.path}):
+            result = sonar_remedy.detect_checks(self.repo)
+        self.assertEqual(result["status"], "detected")
+        draft = result["draft"]
+        self.assertIn("app.sln", draft["checks"][0]["argv"])
+        # which() returns the PATHEXT casing of the machine (dotnet.EXE vs
+        # dotnet.exe); compare case-insensitively, like the filesystem does.
+        self.assertEqual(
+            os.path.normcase(draft["checks"][0]["argv"][0]), os.path.normcase(self.exe)
+        )
+        self.assertEqual(
+            draft["checks"][0]["executable_sha256"],
+            hashlib.sha256(b"fake-dotnet").hexdigest(),
+        )
+        self.assertIn("tests/App.Tests.csproj", draft["test_paths"])
+        self.assertIn("HUMAN", draft["characterization_reason"])
+        self.assertTrue(result["missing"])
+
+    def test_missing_dotnet_without_inventing_paths(self):
+        with mock.patch.dict(os.environ, {"PATH": self.tmp.name}, clear=False):
+            with mock.patch.object(sonar_remedy.shutil, "which", return_value=None):
+                result = sonar_remedy.detect_checks(self.repo)
+        self.assertEqual(result["status"], "missing")
+        self.assertIsNone(result["draft"])
+        self.assertTrue(any("dotnet" in item for item in result["missing"]))
+
+    def test_ambiguous_solutions_ask_human(self):
+        with open(os.path.join(self.repo, "other.sln"), "w", encoding="utf-8") as fh:
+            fh.write("sln\n")
+        with mock.patch.dict(os.environ, {"PATH": self.path}):
+            result = sonar_remedy.detect_checks(self.repo)
+        self.assertEqual(result["status"], "missing")
+        self.assertTrue(
+            any("app.sln" in item and "other.sln" in item for item in result["missing"])
+        )
+
+    def test_node_scripts_are_reported_not_wired(self):
+        import json
+
+        with open(os.path.join(self.repo, "package.json"), "w", encoding="utf-8") as fh:
+            json.dump({"scripts": {"test": "jest", "build": "ng build"}}, fh)
+        with mock.patch.dict(os.environ, {"PATH": self.path}):
+            result = sonar_remedy.detect_checks(self.repo)
+        scripts = result["detected"].get("node_scripts", {})
+        self.assertEqual(scripts.get("test"), "jest")
+        self.assertEqual(scripts.get("build"), "ng build")
+
+    def test_cli_prints_draft(self):
+        with mock.patch.dict(os.environ, {"PATH": self.path}):
+            code, output = self._run_cli(["detect-checks", "--repo", self.repo])
+        self.assertEqual(code, 0)
+        self.assertIn("draft", output)
+
+
 class HookTests(unittest.TestCase):
     HOOK_VERSION = 1
 

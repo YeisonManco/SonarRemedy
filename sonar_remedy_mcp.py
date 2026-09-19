@@ -112,6 +112,18 @@ TOOLS = [
         },
     },
     {
+        "name": "sonar_remedy_detect_checks",
+        "description": "Inspect a checkout and draft its checks.json (read-only). Present the draft plus missing to the human and ask for the judgments; never invent exe paths or hashes.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "repo": {"type": "string"},
+                "state": {"type": "string"},
+            },
+            "required": [],
+        },
+    },
+    {
         "name": "sonar_remedy_analyze",
         "description": "Run the local pipeline to regenerate+publish Sonar results.",
         "inputSchema": {
@@ -299,6 +311,10 @@ def build_argv(name: str, arguments: dict[str, Any] | None) -> list[str]:
             + _opt("--limit", a.get("limit"))
             + (["--integrate"] if a.get("integrate") else [])
             + (["--execute"] if a.get("execute") else [])
+        )
+    if name == "sonar_remedy_detect_checks":
+        return (
+            g + ["detect-checks"] + _opt("--repo", a.get("repo")) + _opt("--state", a.get("state"))
         )
     if name == "sonar_remedy_analyze":
         return (

@@ -478,6 +478,165 @@ def _reset(target: str) -> dict[str, Any]:
 AUTOPILOT_PHASES = ("setup", "slice", "run", "configure", "integrate", "status")
 
 
+def detect_checks(repo: str, state: str | None = None) -> dict[str, Any]:
+    """Inspect a target checkout and draft its checks.json (read-only).
+
+    Discovery only: every value comes from the repo or the local disk, the
+    human completes the 1-2 judgments (policy/reason or RED markers) and
+    approves explicitly via `configure --approve-checks-sha256`. Nothing is
+    written or executed here.
+    """
+    import debt_queue
+
+    root = os.path.abspath(repo)
+    detected: dict[str, Any] = {}
+    missing: list[str] = []
+
+    def _solutions() -> list[str]:
+        found: list[str] = []
+        try:
+            entries = sorted(os.scandir(root), key=lambda entry: entry.name)
+        except OSError:
+            return []
+        for entry in entries:
+            if entry.is_file() and entry.name.lower().endswith((".sln", ".slnx")):
+                found.append(entry.name)
+        if found:
+            return sorted(found)
+        for entry in entries:
+            if entry.is_dir() and entry.name != ".git":
+                try:
+                    inner = sorted(os.scandir(entry.path), key=lambda item: item.name)
+                except OSError:
+                    continue
+                for item in inner:
+                    if item.is_file() and item.name.lower().endswith((".sln", ".slnx")):
+                        found.append(f"{entry.name}/{item.name}")
+        return sorted(found)
+
+    def _test_projects() -> list[str]:
+        found: list[str] = []
+        for base, dirs, names in os.walk(root):
+            depth = os.path.relpath(base, root).count(os.sep)
+            if depth > 3:
+                dirs[:] = []
+                continue
+            dirs[:] = sorted(
+                name
+                for name in dirs
+                if name not in (".git", "node_modules", "bin", "obj", ".sonarremedy")
+            )
+            for name in sorted(names):
+                lowered = name.lower()
+                if lowered.endswith(".csproj") and (
+                    "tests." in lowered or lowered.endswith(("tests.csproj", "test.csproj"))
+                ):
+                    found.append(
+                        os.path.relpath(os.path.join(base, name), root).replace(os.sep, "/")
+                    )
+        return sorted(found)
+
+    slns = _solutions()
+    if len(slns) == 1:
+        detected["solution"] = slns[0]
+    elif slns:
+        missing.append(f"multiple solutions found: {', '.join(slns)} — choose one")
+    else:
+        missing.append("no .sln/.slnx solution found at the repo root (one level deep)")
+
+    tests = _test_projects()
+    if tests:
+        detected["test_projects"] = tests
+    else:
+        missing.append("no *Tests.csproj found — declare test_paths manually")
+
+    exe = shutil.which("dotnet")
+    if exe:
+        detected["dotnet"] = exe
+    else:
+        missing.append("dotnet executable not found in PATH — install the .NET SDK")
+
+    package = os.path.join(root, "package.json")
+    if os.path.isfile(package):
+        try:
+            with open(package, encoding="utf-8") as handle:
+                scripts = json.load(handle).get("scripts", {})
+        except (OSError, ValueError):
+            scripts = {}
+        if isinstance(scripts, dict):
+            reported = {key: scripts[key] for key in ("test", "build") if key in scripts}
+            if reported:
+                detected["node_scripts"] = reported
+
+    draft: dict[str, Any] | None = None
+    if "solution" in detected and "test_projects" in detected and "dotnet" in detected:
+        with open(detected["dotnet"], "rb") as handle:
+            sha = debt_queue.digest(handle.read(debt_queue.MAX_SOURCE))
+        draft = {
+            "version": 1,
+            "target": root,
+            "branch": "[HUMAN: bound queue branch, e.g. main]",
+            "policy": "characterization",
+            "characterization_reason": "[HUMAN: describe the behavior-preserving refactor]",
+            "test_paths": detected["test_projects"],
+            "expected_red": {},
+            "allowed_outputs": [],
+            "checks": [
+                {
+                    "name": "build",
+                    "kind": "build",
+                    "argv": [detected["dotnet"], "build", detected["solution"]],
+                    "executable_sha256": sha,
+                    "cwd": ".",
+                    "timeout_seconds": 600,
+                },
+                {
+                    "name": "tests",
+                    "kind": "trx",
+                    "argv": [
+                        detected["dotnet"],
+                        "test",
+                        detected["test_projects"][0],
+                        "--logger",
+                        "trx;LogFileName=tests.trx",
+                        "--results-directory",
+                        "{run}",
+                    ],
+                    "executable_sha256": sha,
+                    "cwd": ".",
+                    "timeout_seconds": 600,
+                    "report": "tests.trx",
+                },
+            ],
+        }
+        missing.extend(
+            [
+                "complete the [HUMAN] fields (or switch to red-first with expected_red markers from a real failing run)",
+                "save the draft as checks.json, then dry-run configure to review checks_sha256",
+            ]
+        )
+
+    if state:
+        follow = (
+            f"save the draft as checks.json, complete the [HUMAN] fields, then "
+            f"`sonarremedy configure --state {os.path.abspath(state)} --repo {root} --checks <file>`"
+        )
+    else:
+        follow = (
+            "save the draft as checks.json, complete the [HUMAN] fields, then "
+            "`sonarremedy configure --state <queue> --repo "
+            f"{root} --checks <file>`"
+        )
+    return {
+        "status": "detected" if draft is not None else "missing",
+        "repo": root,
+        "detected": detected,
+        "draft": draft,
+        "missing": missing,
+        "next_command": follow,
+    }
+
+
 def autopilot(
     repo: str,
     state: str,
@@ -960,6 +1119,11 @@ def main(argv: list[str] | None = None) -> int:
     autopilot_cmd.add_argument("--limit", type=int, default=4)
     autopilot_cmd.add_argument("--integrate", action="store_true")
     autopilot_cmd.add_argument("--execute", action="store_true")
+    detect_cmd = commands.add_parser(
+        "detect-checks", help="inspect a checkout and draft its checks.json (read-only)"
+    )
+    detect_cmd.add_argument("--repo", help="local checkout (default: current directory)")
+    detect_cmd.add_argument("--state", help="queue directory (echoed in the next command)")
     cfgproj_cmd = commands.add_parser(
         "configure-project", help="save a project config non-interactively"
     )
@@ -1191,6 +1355,9 @@ def main(argv: list[str] | None = None) -> int:
                 print(json.dumps(report.remove_rule(target, args.rule), sort_keys=True))
                 return 0
             raise rc.ConfigError("unknown rules action: " + args.action)
+        if args.command == "detect-checks":
+            print(json.dumps(detect_checks(args.repo or os.getcwd(), args.state), sort_keys=True))
+            return 0
         rcfg = _load_config(args)
         if args.command == "scan-suppressions":
             import sonar_suppressions

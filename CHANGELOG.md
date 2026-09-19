@@ -2,6 +2,12 @@
 
 All notable changes to SonarRemedy are documented here.
 
+## [0.6.0] - 2026-09-19
+
+### Added
+
+- **`detect-checks`** (`sonarremedy detect-checks` + `sonar_remedy_detect_checks` MCP tool, read-only) — inspects a checkout and drafts its `checks.json` (.NET solution + test projects + `dotnet` with the real executable sha256), reporting `missing` judgments for the human instead of inventing values. The model flow is now detect → present → ask (policy/reason or RED markers), then the human approves via `configure --approve-checks-sha256`.
+
 ## [0.5.2] - 2026-09-19
 
 ### Fixed
@@ -12,7 +18,7 @@ All notable changes to SonarRemedy are documented here.
 
 ### Fixed
 
-- **Case-aliased paths in `autopilot`** — system-temp and hand-typed paths whose case differs from disk made `slice` fail with `case_alias` on CI while passing locally. `autopilot` now canonicalizes path case from disk at entry (new `debt_queue.canonical_case`, links and missing tails preserved so the security checks still see and block them).
+- **Case-aliased paths in `autopilot`** — system-temp and hand-typed paths whose case differs from disk made `slice` fail with `case_alias` on CI while passing locally (temp roots may also use 8.3 short names invisible to directory listings). `autopilot` now canonicalizes paths at entry (new `debt_queue.canonical_case`: short names expanded via GetLongPathNameW, on-disk case restored; links and missing tails preserved so the security checks still see and block them).
 - **Hook idempotence test** — it counted the word "SonarRemedy" in the installed hook, which also matches a `SonarRemedy` checkout path (CI). It now compares installed bytes and counts the hook marker instead.
 
 ## [0.5.0] - 2026-09-19

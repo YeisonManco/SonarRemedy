@@ -21,6 +21,7 @@ COMMANDS = [
     "analyze",
     "run-all",
     "autopilot",
+    "detect-checks",
     "configure-project",
     "scan-suppressions",
     "scan-exclusions",
@@ -74,6 +75,10 @@ class ToolRegistryTests(unittest.TestCase):
                 "--execute",
             ],
         )
+
+    def test_build_argv_detect_checks(self):
+        argv = mcp.build_argv("sonar_remedy_detect_checks", {"repo": "C:/r"})
+        self.assertEqual(argv, ["detect-checks", "--repo", "C:/r"])
 
     def test_build_argv_unknown(self):
         with self.assertRaises(ValueError):

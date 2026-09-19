@@ -97,6 +97,41 @@ def local_path(value: str | Path, *, exists: bool = False) -> Path:
     return path
 
 
+def _long_path(value: str) -> str:
+    """Expand 8.3 short-name components without resolving links.
+
+    Directory listings only show long names, so a short alias (e.g.
+    `RUNNER~1`) can never match them. GetLongPathName expands those parts
+    while leaving symlinks/junctions intact for downstream checks to block.
+    """
+    if os.name != "nt":
+        return value
+    try:
+        get_long = ctypes.windll.kernel32.GetLongPathNameW
+    except (AttributeError, OSError):
+        return value
+    buf = ctypes.create_unicode_buffer(len(value) + 260)
+    try:
+        needed = get_long(value, buf, len(buf))
+    except OSError:
+        return value
+    if needed <= 0:
+        return value
+    if needed > len(buf):
+        buf = ctypes.create_unicode_buffer(needed)
+        try:
+            if get_long(value, buf, needed) <= 0:
+                return value
+        except OSError:
+            return value
+    result = buf.value
+    if result.startswith("\\\\?\\UNC\\"):
+        return "\\\\" + result[8:]
+    if result.startswith("\\\\?\\"):
+        return result[4:]
+    return result
+
+
 def canonical_case(value: str | Path) -> Path:
     """Repair filename case from disk without resolving links.
 
@@ -104,11 +139,24 @@ def canonical_case(value: str | Path) -> Path:
     but user-typed and system-temp paths often drift in case only. This
     rebuilds the existing prefix with the on-disk names; missing tails and
     reparse points are preserved lexically so downstream checks still see
-    (and block) them.
+    (and block) them. Short-name aliases are expanded first via
+    GetLongPathNameW — applied to the longest existing prefix, since it
+    requires its input to exist — which never resolves links.
     """
     path = Path(os.path.abspath(value))
-    rebuilt = Path(path.anchor)
-    parts = path.relative_to(path.anchor).parts
+    probe = path
+    tail: list[str] = []
+    while not os.path.lexists(probe):
+        tail.append(probe.name)
+        parent = probe.parent
+        if parent == probe:
+            break
+        probe = parent
+    current = Path(_long_path(str(probe)))
+    if tail:
+        current = current.joinpath(*reversed(tail))
+    rebuilt = Path(current.anchor)
+    parts = current.relative_to(current.anchor).parts
     for index, part in enumerate(parts):
         candidate = rebuilt / part
         try:
