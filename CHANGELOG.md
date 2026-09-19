@@ -8,7 +8,7 @@ All notable changes to SonarRemedy are documented here.
 
 - **`rules` as an MCP tool** (`sonar_remedy_rules`) — the AI can list/manage the whitelist/blacklist when the user asks.
 - **`check`** — reports whether the project's SonarRemedy setup is up to date with the installed pack (`up_to_date` / `outdated` / `not_initialized`), driving the "re-run `init` after an update" flow.
-- **`doctor`** — read-only diagnostic: checks the project version and (with `--state`/`--repo`) a queue's identity (root/branch/revision) against the actual git state, reporting each mismatch with a fix suggestion.
+- **`doctor`** — read-only diagnostic: checks the project version and (with `--state`/`--repo`) a queue's identity (root/branch/revision) against the actual git state, reporting each mismatch with a fix suggestion. A bad `--state` (a `.json` file instead of the queue directory) now reports a clear "must be the queue directory (contains queue.sqlite3)" hint. Documented in the README with a "Diagnose" section.
 
 ### Fixed
 

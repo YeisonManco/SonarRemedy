@@ -120,7 +120,23 @@ what the mechanical tools cannot: understanding the code and writing an idiomati
 | `init` | Wire up VS Code + Copilot, and create `.sonarremedy/` (idempotent) |
 | `clean` | Remove generated state + sibling worktrees (keep `rules.json`) |
 | `reset` | Remove `.sonarremedy/` entirely + sibling worktrees (back to zero) |
+| `check` | Report whether the project's setup is up to date with the installed pack |
+| `doctor` | Diagnose the setup + a queue's identity (root/branch/revision) with fixes |
 | `update` | `git pull` + reinstall the pack from its clone |
+
+## Diagnose
+
+`doctor` reports what is wrong and how to fix it — use it before guessing:
+
+```powershell
+sonarremedy doctor                          # project version + setup
+sonarremedy doctor --state <queue> --repo <path>
+# → compares the queue's bound identity (root/branch/revision) with the actual
+#   git state and reports each mismatch with a fix suggestion.
+```
+
+`--state` is the **queue directory** created by `slice` (it contains `queue.sqlite3`),
+not an export `.json` file.
 
 ## Quick start
 

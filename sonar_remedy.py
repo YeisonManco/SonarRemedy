@@ -270,7 +270,17 @@ def _doctor(repo: str | None, state: str | None, project_dir: str) -> dict[str, 
                     }
                 )
         except Exception as error:
-            checks.append({"name": "queue", "status": "error", "detail": str(error)})
+            checks.append(
+                {
+                    "name": "queue",
+                    "status": "error",
+                    "detail": f"{state}: {error}",
+                    "fix": (
+                        "--state must be the queue directory created by `slice` "
+                        "(it contains queue.sqlite3), not an export .json file"
+                    ),
+                }
+            )
 
     issues = [c for c in checks if c["status"] == "error"]
     warnings = [c for c in checks if c["status"] == "warning"]
