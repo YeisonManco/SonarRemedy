@@ -488,7 +488,10 @@ def detect_checks(repo: str, state: str | None = None) -> dict[str, Any]:
     """
     import debt_queue
 
-    root = os.path.abspath(repo)
+    # Canonicalize first: everything derived (solution, test paths, exe) must
+    # use on-disk case, or validate_config blocks it with case_alias later.
+    # The tool must never emit a path its own validator rejects.
+    root = str(debt_queue.canonical_case(os.path.abspath(repo)))
     detected: dict[str, Any] = {}
     missing: list[str] = []
 
@@ -552,7 +555,7 @@ def detect_checks(repo: str, state: str | None = None) -> dict[str, Any]:
 
     exe = shutil.which("dotnet")
     if exe:
-        detected["dotnet"] = exe
+        detected["dotnet"] = str(debt_queue.canonical_case(exe))
     else:
         missing.append("dotnet executable not found in PATH — install the .NET SDK")
 

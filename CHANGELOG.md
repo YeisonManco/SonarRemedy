@@ -2,6 +2,12 @@
 
 All notable changes to SonarRemedy are documented here.
 
+## [0.6.2] - 2026-09-19
+
+### Fixed
+
+- **`detect-checks` emits canonical paths** — it reported the `dotnet` path with the machine's PATHEXT casing (`dotnet.EXE`), which its own validator then blocked with `case_alias`. Detection now canonicalizes the repo root and the executable (same `canonical_case` as the harness), so a generated draft always satisfies validation.
+
 ## [0.6.1] - 2026-09-19
 
 ### Fixed

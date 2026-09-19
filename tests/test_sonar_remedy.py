@@ -752,9 +752,13 @@ class DetectChecksTests(unittest.TestCase):
         draft = result["draft"]
         self.assertIn("app.sln", draft["checks"][0]["argv"])
         # which() returns the PATHEXT casing of the machine (dotnet.EXE vs
-        # dotnet.exe); compare case-insensitively, like the filesystem does.
+        # dotnet.exe), and the fixture path itself may be aliased: the draft
+        # must carry the canonical form of the same file.
+        import debt_queue
+
         self.assertEqual(
-            os.path.normcase(draft["checks"][0]["argv"][0]), os.path.normcase(self.exe)
+            os.path.normcase(draft["checks"][0]["argv"][0]),
+            os.path.normcase(str(debt_queue.canonical_case(self.exe))),
         )
         self.assertEqual(
             draft["checks"][0]["executable_sha256"],
@@ -763,6 +767,12 @@ class DetectChecksTests(unittest.TestCase):
         self.assertIn("tests/App.Tests.csproj", draft["test_paths"])
         self.assertIn("HUMAN", draft["characterization_reason"])
         self.assertTrue(result["missing"])
+        # Every absolute path the draft emits must satisfy the validator
+        # itself (no case_alias on its own output, on any machine).
+        import debt_queue
+
+        for check in draft["checks"]:
+            debt_queue.local_path(check["argv"][0], exists=True)
 
     def test_missing_dotnet_without_inventing_paths(self):
         with mock.patch.dict(os.environ, {"PATH": self.tmp.name}, clear=False):
