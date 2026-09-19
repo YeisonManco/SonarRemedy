@@ -18,6 +18,7 @@ All notable changes to SonarRemedy are documented here.
 ### Changed
 
 - **Copilot instructions + MCP descriptions** — disambiguated `scan_exclusions` (detect in code) vs `rules` (configured lists), so Copilot scans the code instead of just listing empty rules.
+- **Copilot instructions** — explicit "NEVER read the SonarRemedy source code; the `sonar_remedy_*` MCP tools are the only interface" (stops Copilot from reading the pack implementation).
 
 ## [0.2.7] - 2026-09-18
 

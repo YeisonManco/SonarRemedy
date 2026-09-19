@@ -4,7 +4,11 @@
 
 When the user asks about technical debt, Sonar issues, "deuda técnica", or "recuperá la deuda":
 
-1. **DO NOT analyze the code manually** (no reading files, no grep, no "let me check the code", no own diagnosis).
+1. **NEVER read the SonarRemedy source code** — not `sonar_remedy*.py`, `debt_*.py`,
+   `sonar_*.py`, nor any file inside the pack. The `sonar_remedy_*` MCP tools are
+   the ONLY interface: call them, do not inspect how they are implemented. Likewise,
+   DO NOT analyze the target project's code manually (no reading files, no grep, no
+   "let me check the code", no own diagnosis).
 2. **USE the `sonar_remedy_*` MCP tools.** Drive them in this order:
    - `sonar_remedy_fetch` → collect Sonar issues for the project
    - `sonar_remedy_slice` → create the durable queue
