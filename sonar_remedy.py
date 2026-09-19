@@ -988,9 +988,11 @@ def main(argv: list[str] | None = None) -> int:
             import debt_queue
             import debt_runner
 
-            work = debt_queue.Queue(
-                args.state, target=repo, branch=rcfg["repository"]["main_branch"]
-            )
+            # Assert the repo path only. The queue's binding is the source of truth
+            # for the branch/revision (check_identity validates the ACTUAL git state),
+            # so we do NOT re-assert the config's main_branch here — a stale config
+            # must not block a queue whose bound branch is correct.
+            work = debt_queue.Queue(args.state, target=repo)
             result = debt_runner.run(
                 work,
                 provider="manual",
@@ -1010,9 +1012,11 @@ def main(argv: list[str] | None = None) -> int:
             import debt_executor
             import debt_queue
 
-            work = debt_queue.Queue(
-                args.state, target=repo, branch=rcfg["repository"]["main_branch"]
-            )
+            # Assert the repo path only. The queue's binding is the source of truth
+            # for the branch/revision (check_identity validates the ACTUAL git state),
+            # so we do NOT re-assert the config's main_branch here — a stale config
+            # must not block a queue whose bound branch is correct.
+            work = debt_queue.Queue(args.state, target=repo)
             checks = debt_queue.parse_json(
                 debt_queue.read_bytes(args.checks, debt_queue.MAX_EXPORT)
             )
@@ -1026,9 +1030,11 @@ def main(argv: list[str] | None = None) -> int:
             import debt_executor
             import debt_queue
 
-            work = debt_queue.Queue(
-                args.state, target=repo, branch=rcfg["repository"]["main_branch"]
-            )
+            # Assert the repo path only. The queue's binding is the source of truth
+            # for the branch/revision (check_identity validates the ACTUAL git state),
+            # so we do NOT re-assert the config's main_branch here — a stale config
+            # must not block a queue whose bound branch is correct.
+            work = debt_queue.Queue(args.state, target=repo)
             result = debt_executor.integrate(work, args.job, execute=args.execute)
             print(json.dumps(result, sort_keys=True))
             return (

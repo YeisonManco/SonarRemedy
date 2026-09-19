@@ -206,7 +206,9 @@ class RunCommandTests(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertEqual(qpatched.call_args.args[0], os.path.join(self.tmp.name, "q"))
         self.assertEqual(qpatched.call_args.kwargs.get("target"), self.tmp.name)
-        self.assertEqual(qpatched.call_args.kwargs.get("branch"), "main")
+        # The queue's binding is the source of truth for the branch; run does NOT
+        # re-assert the config's main_branch (a stale config must not block it).
+        self.assertIsNone(qpatched.call_args.kwargs.get("branch"))
         self.assertEqual(rpatched.call_args.args[0], fake_work)
         self.assertEqual(rpatched.call_args.kwargs.get("provider"), "manual")
         self.assertIs(rpatched.call_args.kwargs.get("execute"), False)

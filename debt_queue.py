@@ -191,7 +191,7 @@ def check_identity(binding: dict[str, str], reader: Callable[[Path], dict[str, s
             for key in ("root", "branch", "revision")
             if actual.get(key) != expected[key]
         )
-        raise Blocked("target_identity_mismatch (" + detail + ")")
+        raise Blocked("target_identity_mismatch (repo " + detail + ")")
 
 
 def plan(
@@ -496,7 +496,7 @@ class Queue:
                 )
             if self.branch is not None and self.branch != binding["branch"]:
                 raise Blocked(
-                    "target_identity_mismatch (branch: expected="
+                    "target_identity_mismatch (caller branch: expected="
                     + repr(binding["branch"])
                     + ", actual="
                     + repr(self.branch)
