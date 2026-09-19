@@ -178,6 +178,15 @@ sonarremedy autopilot --state <queue> --repo <path> --execute --integrate
 - Proposals stop at `awaiting_proposals` with each `proposal_path`; integrating stops at the configure gate until checks are explicitly bound (`configure --checks ... --approve-checks-sha256 ... --execute`).
 - The same flow is available to Copilot as the `sonar_remedy_autopilot` MCP tool.
 
+## Commit gate (pre-push hook)
+
+`init` installs a pre-push hook into the project's `.git/hooks`, so broken code cannot be pushed: the hook runs the project's gates and blocks the push on red. Never use `--no-verify`.
+
+- Pack repos: suite + `ruff check` + `ruff format --check` (mirrors CI).
+- Managed projects: commands declared in `.sonarremedy-hooks.json` (`{"pre-push": [[...argv...]]}`); without it, the hook blocks with the exact shape to declare.
+- `doctor` verifies the hook (`git_hooks`: ok/missing/foreign/outdated) and `--fix` reinstalls it. A foreign hook is never overwritten.
+- Enforcement travels with the pack: hook + harness + instructions need no server settings. Optionally, on repos you own, add branch protection (GitHub → Settings → Branches → rule for `main`: require status checks) as a server-side backstop.
+
 To save a project config non-interactively (for scripts), use:
 
 ```powershell

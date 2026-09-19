@@ -9,6 +9,7 @@ import unittest
 from unittest import mock
 
 import sonar_fetch
+import sonar_hooks
 import sonar_remedy
 import sonar_remedy_config as rc
 
@@ -716,6 +717,113 @@ class RunAllCommandTests(unittest.TestCase):
                 ]
             )
         self.assertEqual(code, 2)
+
+
+class HookTests(unittest.TestCase):
+    HOOK_VERSION = 1
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.proj = os.path.join(self.tmp.name, "proj")
+        os.makedirs(self.proj)
+        self.gitproj = os.path.join(self.tmp.name, "gitproj")
+        os.makedirs(os.path.join(self.gitproj, ".git", "hooks"))
+
+    def _hook_path(self, root):
+        return os.path.join(root, ".git", "hooks", "pre-push")
+
+    def test_install_skips_non_repo(self):
+        result = sonar_hooks.install(self.proj)
+        self.assertEqual(result["status"], "skipped")
+        self.assertIn("not_a_git_checkout", result["reason"])
+        self.assertFalse(os.path.exists(os.path.join(self.proj, ".git")))
+
+    def test_install_creates_hook_in_checkout(self):
+        result = sonar_hooks.install(self.gitproj)
+        self.assertEqual(result["status"], "installed")
+        with open(self._hook_path(self.gitproj), encoding="utf-8") as fh:
+            content = fh.read()
+        self.assertIn("sonar_hooks.py", content)
+        self.assertIn("SonarRemedy", content)
+
+    def test_install_is_idempotent(self):
+        sonar_hooks.install(self.gitproj)
+        result = sonar_hooks.install(self.gitproj)
+        self.assertEqual(result["status"], "ok")
+        with open(self._hook_path(self.gitproj), encoding="utf-8") as fh:
+            self.assertEqual(fh.read().count("SonarRemedy"), 1)
+
+    def test_install_refuses_foreign_hook(self):
+        with open(self._hook_path(self.gitproj), "w", encoding="utf-8") as fh:
+            fh.write("#!/bin/sh\necho foreign\n")
+        with self.assertRaises(Exception) as ctx:
+            sonar_hooks.install(self.gitproj)
+        self.assertEqual(type(ctx.exception).__name__, "Blocked")
+        self.assertIn("foreign_hook", str(ctx.exception))
+        with open(self._hook_path(self.gitproj), encoding="utf-8") as fh:
+            self.assertIn("foreign", fh.read())
+
+    def test_status_reports_missing_ok_and_outdated(self):
+        self.assertEqual(sonar_hooks.status(self.proj)["status"], "not_a_repo")
+        self.assertEqual(sonar_hooks.status(self.gitproj)["status"], "missing")
+        sonar_hooks.install(self.gitproj)
+        self.assertEqual(sonar_hooks.status(self.gitproj)["status"], "ok")
+        with open(self._hook_path(self.gitproj), "w", encoding="utf-8") as fh:
+            fh.write("#!/bin/sh\n# SonarRemedy pre-push gate v0\n")
+        self.assertEqual(sonar_hooks.status(self.gitproj)["status"], "outdated")
+
+    def test_run_gates_passes_declared_commands(self):
+        hooks = {"pre-push": [[__import__("sys").executable, "-B", "-c", "pass"]]}
+        with open(os.path.join(self.proj, ".sonarremedy-hooks.json"), "w", encoding="utf-8") as fh:
+            __import__("json").dump(hooks, fh)
+        result = sonar_hooks.run_gates(self.proj)
+        self.assertEqual(result["status"], "ok")
+
+    def test_run_gates_blocks_on_failing_command(self):
+        hooks = {
+            "pre-push": [[__import__("sys").executable, "-B", "-c", "import sys; sys.exit(3)"]]
+        }
+        with open(os.path.join(self.proj, ".sonarremedy-hooks.json"), "w", encoding="utf-8") as fh:
+            __import__("json").dump(hooks, fh)
+        result = sonar_hooks.run_gates(self.proj)
+        self.assertEqual(result["status"], "blocked")
+        self.assertIn("returncode", result["reason"])
+
+    def test_run_gates_blocks_without_gates_in_managed_project(self):
+        os.makedirs(os.path.join(self.proj, ".sonarremedy"))
+        result = sonar_hooks.run_gates(self.proj)
+        self.assertEqual(result["status"], "blocked")
+        self.assertIn(".sonarremedy-hooks.json", result["fix"])
+
+    def test_run_gates_pack_markers_mirror_ci(self):
+        os.makedirs(os.path.join(self.proj, "tests"))
+        with open(os.path.join(self.proj, "sonar_remedy.py"), "w", encoding="utf-8") as fh:
+            fh.write('"""Marker."""\n')
+        with mock.patch.object(sonar_hooks, "_has_ruff", return_value=False):
+            result = sonar_hooks.run_gates(self.proj)
+        self.assertEqual(result["status"], "blocked")
+        self.assertIn("ruff", result["reason"])
+
+    def test_init_installs_hook_in_checkout(self):
+        with contextlib.redirect_stdout(io.StringIO()):
+            code = sonar_remedy.main(["init", "--dir", self.gitproj])
+        self.assertEqual(code, 0)
+        self.assertTrue(os.path.isfile(self._hook_path(self.gitproj)))
+
+    def test_doctor_reports_and_fixes_missing_hook(self):
+        with contextlib.redirect_stdout(io.StringIO()):
+            sonar_remedy.main(["init", "--dir", self.gitproj])
+        os.remove(self._hook_path(self.gitproj))
+        with contextlib.redirect_stdout(io.StringIO()) as buf:
+            code = sonar_remedy.main(["doctor", "--dir", self.gitproj])
+        self.assertEqual(code, 0)
+        self.assertIn("git_hooks", buf.getvalue())
+        with contextlib.redirect_stdout(io.StringIO()) as buf:
+            code = sonar_remedy.main(["doctor", "--fix", "--dir", self.gitproj])
+        self.assertEqual(code, 0)
+        self.assertIn("git_hooks", buf.getvalue())
+        self.assertTrue(os.path.isfile(self._hook_path(self.gitproj)))
 
 
 class AutopilotCommandTests(unittest.TestCase):

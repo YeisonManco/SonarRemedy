@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any
 
 import sonar_fetch
+import sonar_hooks
 import sonar_remedy_config as rc
 
 try:
@@ -286,6 +287,23 @@ def _doctor(
             }
         )
 
+    hook_state = sonar_hooks.status(project_dir)
+    if hook_state["status"] == "ok":
+        checks.append({"name": "git_hooks", "status": "ok", "detail": f"v{hook_state['version']}"})
+    elif hook_state["status"] == "not_a_repo":
+        checks.append(
+            {"name": "git_hooks", "status": "info", "detail": "not a git checkout; no hook needed"}
+        )
+    else:
+        checks.append(
+            {
+                "name": "git_hooks",
+                "status": "warning",
+                "detail": hook_state["status"],
+                "fix": f"run `sonarremedy init --dir {os.path.abspath(project_dir)}`",
+            }
+        )
+
     if state:
         import debt_queue
 
@@ -376,7 +394,24 @@ def _doctor(
                     "detail": f"re-ran init; project setup is now at {__version__}",
                 }
             )
-        else:
+        hooks_bad = any(c["name"] == "git_hooks" and c["status"] == "warning" for c in checks)
+        if hooks_bad:
+            try:
+                installed = sonar_hooks.install(project_dir)
+            except Exception as error:
+                installed = {"status": "blocked", "reason": str(error)}
+            for check in checks:
+                if check["name"] == "git_hooks" and installed.get("status") in ("ok", "installed"):
+                    check["status"] = "ok"
+                    check["detail"] = "pre-push hook present"
+            checks.append(
+                {
+                    "name": "fix_hooks",
+                    "status": "ok" if installed.get("status") in ("ok", "installed") else "info",
+                    "detail": f"pre-push hook: {installed.get('status')}",
+                }
+            )
+        if not setup_bad and not hooks_bad:
             checks.append(
                 {"name": "fix", "status": "info", "detail": "nothing safe to fix automatically"}
             )
@@ -1096,6 +1131,10 @@ def main(argv: list[str] | None = None) -> int:
             target = os.path.abspath(args.dir or os.getcwd())
             mcp_path, pointer_path, full_path = _write_init_files(target)
             state = _init_sonarremedy_dir(target)
+            try:
+                hooks = sonar_hooks.install(target)
+            except Exception as error:
+                hooks = {"status": "blocked", "reason": str(error)}
             print(
                 json.dumps(
                     {
@@ -1108,6 +1147,7 @@ def main(argv: list[str] | None = None) -> int:
                         "created": state["created"],
                         "gitignore_added": state["gitignore_added"],
                         "version": state["version"],
+                        "hooks": hooks,
                     },
                     sort_keys=True,
                 )

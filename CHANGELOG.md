@@ -2,6 +2,12 @@
 
 All notable changes to SonarRemedy are documented here.
 
+## [0.5.0] - 2026-09-19
+
+### Added
+
+- **Pre-push commit gate** — `init` installs a versioned pre-push hook (`.git/hooks/pre-push`) that runs the project's gates and blocks the push on red, so nobody (human, Copilot or agent) lands code with a failing build or suite, and `--no-verify` is forbidden by the instructions. Pack repos run suite + `ruff check` + `ruff format --check` (CI mirror); managed projects run commands declared in `.sonarremedy-hooks.json` (missing declaration blocks with the exact shape). `doctor` verifies the hook (`git_hooks`: ok/missing/foreign/outdated, never overwrites a foreign hook) and `--fix` reinstalls it. New `sonar_hooks` module; README documents the hook plus the GitHub branch-protection backstop.
+
 ## [0.4.0] - 2026-09-19
 
 ### Added

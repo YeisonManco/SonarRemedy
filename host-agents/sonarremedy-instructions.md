@@ -72,6 +72,10 @@ If a command returns a `blocked` reason you do not understand, or the setup look
 
 A `target_identity_mismatch` is the pack's fail-closed safety, not a bug: the queue is bound to one checkout/branch/revision. Always use the SAME `--repo` path across `fetch` → `slice` → `run` (one worktree per branch).
 
+## 10b. Commits and pushes go through the gate — never `--no-verify`
+
+`init` installs a pre-push hook that runs the project's gates (suite + lint for the pack; declared commands for managed projects). The rule is absolute: NEVER commit or push with `--no-verify` or any hook bypass. A red gate blocks the push until the failure is fixed — fix the code, never silence the gate. If the hook is missing or outdated, call `sonar_remedy_doctor` (with `fix: true`) instead of pushing blind. No commit or push exists inside the queue runner; those are separate human operations that always pass the gate first.
+
 ## 11. Generating proposals — use the kind hint + language hint
 
 When you act as the worker and generate a `proposal.json`, fix the issue using BOTH:
