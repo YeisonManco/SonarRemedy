@@ -1329,7 +1329,7 @@ class InitCommandTests(unittest.TestCase):
         import debt_queue
 
         with tempfile.TemporaryDirectory() as home:
-            target = os.path.join(home, "target")
+            target = str(debt_queue.canonical_case(os.path.join(home, "target")))
             os.makedirs(target)
             with open(os.path.join(target, "a.cs"), "w", encoding="utf-8") as fh:
                 fh.write("class A {}\n")

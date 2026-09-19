@@ -35,7 +35,7 @@ def relative_name(name: str) -> str:
 def snapshot(root: Path) -> dict[str, str]:
     """Hash the target sources; exclude Git metadata, regenerated outputs, and
     SonarRemedy's own setup files."""
-    root = q.local_path(root, exists=True)
+    root = q.local_path(q.canonical_case(root), exists=True)
     files, total, visited = {}, 0, 0
     # Machine-regenerated directories are not bound: build outputs are
     # rewritten by the very checks the harness runs (hashing them would make
@@ -327,7 +327,7 @@ def release_barrier(
     mismatch stay blocked (fail closed); `--fix`-style `execute` is required
     to touch anything.
     """
-    target = Path(os.path.abspath(root))
+    target = q.canonical_case(os.path.abspath(root))
     control = Path(os.path.abspath(control_root)) if control_root else CONTROL_ROOT
     folder = control / q.digest(str(target).casefold().encode())
     active = folder / "active.json"
@@ -341,8 +341,8 @@ def release_barrier(
     if not active.is_file():
         return {"status": "ok", "reason": "no_active_barrier"}
     try:
-        data = q.parse_json(q.read_bytes(active, q.MAX_EXPORT))
-        intent_path = Path(data["intent"])
+        data = q.parse_json(q.read_bytes(q.canonical_case(active), q.MAX_EXPORT))
+        intent_path = q.canonical_case(Path(data["intent"]))
         intent = q.parse_json(q.read_bytes(intent_path, q.MAX_EXPORT))
     except (q.Blocked, OSError, ValueError, KeyError, TypeError):
         return {

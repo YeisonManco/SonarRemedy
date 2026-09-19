@@ -2,6 +2,12 @@
 
 All notable changes to SonarRemedy are documented here.
 
+## [0.7.5] - 2026-09-19
+
+### Fixed
+
+- **`case_alias` on CI in the barrier tests** — `snapshot` and `release_barrier` read paths without canonicalizing, so a temp root with an 8.3 short-name alias (as on the GitHub runner) failed with `case_alias`. `snapshot` and `release_barrier` now canonicalize their inputs, and the barrier tests use the canonical path, so they pass on any runner.
+
 ## [0.7.4] - 2026-09-19
 
 ### Fixed

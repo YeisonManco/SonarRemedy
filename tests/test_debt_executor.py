@@ -525,7 +525,9 @@ class BarrierReleaseTests(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         self.home = Path(self.tmp.name)
-        self.target = self.home / "target"
+        # Canonicalize like production: the barrier digest and snapshot must use
+        # the on-disk path, not a temp short-name alias (CI temp roots alias).
+        self.target = q.canonical_case(self.home / "target")
         self.target.mkdir()
         (self.target / "a.cs").write_text("class A {}\n", encoding="utf-8")
         self.control = self.home / "control"
