@@ -81,7 +81,7 @@ def validate_config(config: dict[str, Any]) -> Path:
             "invalid_execution_config: keys must be exactly "
             f"{sorted(fields)}; see docs/checks-reference.md"
         )
-    root = q.local_path(config["target"], exists=True)
+    root = q.local_path(q.canonical_case(config["target"]), exists=True)
     for key in ("test_paths", "allowed_outputs"):
         values = config[key]
         if (

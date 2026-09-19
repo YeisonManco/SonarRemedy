@@ -2,6 +2,12 @@
 
 All notable changes to SonarRemedy are documented here.
 
+## [0.6.1] - 2026-09-19
+
+### Fixed
+
+- **Case/short-name aliases in `configure`** — `validate_config` rejected temp-rooted targets with `case_alias` on CI (same class as the autopilot fix: system temp roots drift in case or use 8.3 short names). It now canonicalizes via `debt_queue.canonical_case` before validating, so the check runs on the true path while links and missing paths still block.
+
 ## [0.6.0] - 2026-09-19
 
 ### Added

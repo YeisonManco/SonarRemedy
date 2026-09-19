@@ -424,4 +424,4 @@ class ChecksExampleTests(unittest.TestCase):
                 check["argv"] = [sys.executable, "-B", "-c", "pass"]
                 check["executable_sha256"] = exe_sha
             root = e.validate_config(example)
-            self.assertEqual(str(root), d)
+            self.assertEqual(str(root), str(q.canonical_case(d)))
