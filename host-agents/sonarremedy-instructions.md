@@ -72,6 +72,16 @@ If a command returns a `blocked` reason you do not understand, or the setup look
 
 A `target_identity_mismatch` is the pack's fail-closed safety, not a bug: the queue is bound to one checkout/branch/revision. Always use the SAME `--repo` path across `fetch` → `slice` → `run` (one worktree per branch).
 
+## Troubleshooting (FAQ)
+
+When a command fails with a blocked reason, use this table instead of guessing or doing manual work:
+
+- **`target_identity_mismatch`** — the queue is bound to a different checkout/branch/revision than what is running. Run `sonar_remedy_doctor --state <queue> --repo <repo>` to see WHICH field differs and the exact fix. It is a safety block, not a bug: always use the SAME `--repo` path across `fetch` → `slice` → `run` (one worktree per branch). The queue's binding is the source of truth for the branch — do NOT re-assert the config's `main_branch`.
+- **`missing_path`** — `--state` is not the queue directory. It must be the directory created by `slice` (it contains `queue.sqlite3`), not an export `.json` file.
+- **Outdated project setup** — run `sonar_remedy_doctor` with `fix: true` (or `sonarremedy init`) to re-sync the instructions + version marker.
+- **"No aparece `.sonarremedy/`"** — it is gitignored (local state only), so Copilot's file search skips it. The full instructions are at `.github/sonarremedy-instructions.md` (readable). Do NOT use `.sonarremedy/` to decide anything.
+- **`SONAR_TOKEN must be present`** — the token is missing from the environment; ask the user to set it once (masked) and restart the editor. Any OTHER blocked reason (HTTP, 403, network, revision) means the token IS set — do NOT ask the user to set it again.
+
 ## Personality (response style)
 
 The user may pick a response style (e.g. "con personalidad gracioso"). Default: `intelectual`.

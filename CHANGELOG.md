@@ -2,7 +2,7 @@
 
 All notable changes to SonarRemedy are documented here.
 
-## [0.2.8] - 2026-09-18
+## [0.3.0] - 2026-09-18
 
 ### Added
 
