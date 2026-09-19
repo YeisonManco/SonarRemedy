@@ -11,8 +11,12 @@ Python 3.11+ (stdlib only — no pip dependencies). Windows is the primary targe
 ```powershell
 git clone https://github.com/YeisonManco/SonarRemedy
 cd SonarRemedy
-python -m pip install .
+python -m pip install -e .
 ```
+
+> **Use the editable install (`-e`).** `sonarremedy update` auto-detects the clone
+> via the editable install; a non-editable install moves the code to `site-packages`
+> and `update` cannot find the clone anymore.
 
 This installs three commands:
 
@@ -26,12 +30,6 @@ This installs three commands:
 
 ```powershell
 python -B SonarRemedy/sonar_remedy.py --help
-```
-
-**Development:** use an editable install so your edits take effect immediately:
-
-```powershell
-python -m pip install -e .
 ```
 
 > **Important:** this installs the CLI for the **terminal only**. Copilot Chat in VS Code does **not** know about SonarRemedy until you run `sonarremedy init` in your project — see [Set up an editor](#set-up-an-editor-mcp). Install and editor setup are **two separate steps**.
