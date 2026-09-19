@@ -330,6 +330,39 @@ def _assert_snapshot(
     return actual
 
 
+def _record_check_failure(
+    work: q.Queue,
+    folder: Path,
+    phase: str,
+    check: dict[str, Any],
+    exit_code: int | None,
+    result: dict[str, Any],
+) -> None:
+    """Persist a bounded failure receipt before raising (else the cause is lost)."""
+    stdout = result.get("stdout", b"")
+    if isinstance(stdout, (bytes, bytearray)):
+        tail = bytes(stdout).decode("utf-8", errors="replace")[-4096:]
+    else:
+        tail = str(stdout)[-4096:]
+    payload = q.encoded(
+        {
+            "name": check["name"],
+            "kind": check["kind"],
+            "phase": phase,
+            "argv": check["argv"],
+            "cwd": check["cwd"],
+            "exit_code": exit_code,
+            "reason": result.get("reason", ""),
+            "stdout_tail": tail,
+        }
+    )
+    try:
+        work._reserve(len(payload))
+        q.write_immutable(folder / f"{phase}-{check['name']}.failed.json", payload)
+    except (q.Blocked, OSError):
+        pass
+
+
 def _checks(
     work: q.Queue,
     binding: dict[str, Any],
@@ -367,6 +400,7 @@ def _checks(
             expected = _assert_snapshot(Path(binding["root"]), expected, config, generated=True)
             identity()
         if result.get("reason") or result.get("status") != "exited":
+            _record_check_failure(work, folder, phase, check, None, result)
             raise q.Blocked("configured_check_process_failed")
         receipt = {"name": check["name"], "kind": check["kind"], "exit_code": result["exit_code"]}
         if check["kind"] == "trx":
@@ -377,6 +411,7 @@ def _checks(
             receipt["report"] = report.relative_to(work.state).as_posix()
             receipt["report_sha256"] = q.digest(q.read_bytes(report, q.MAX_EXPORT))
         elif result["exit_code"] != 0:
+            _record_check_failure(work, folder, phase, check, result["exit_code"], result)
             raise q.Blocked("configured_build_failed")
         receipts.append(receipt)
         work._reserve(0)
@@ -606,13 +641,21 @@ def integrate(
                     and isinstance(error, q.Blocked)
                     and not isinstance(error, Contaminated)
                 ):
-                    work._set_status(connection, job_id, "deferred", reason)
-                    outcome = {"status": "deferred", "job_id": job_id, "reason": reason}
-                else:
-                    work._set_status(connection, job_id, "failed", reason)
-                    connection.execute("UPDATE meta SET value='true' WHERE key='quarantined'")
-                    barrier.quarantine(reason)
-                    outcome = {"status": "quarantined", "job_id": job_id, "reason": reason}
+                    # Baseline runs on the unmodified tree, so nothing here can
+                    # indict the proposal: the room is at fault, not the fix.
+                    # Leave the job proposed so the same integrate retries after
+                    # the environment is repaired (deferring would strand it).
+                    environment = {
+                        "configured_build_failed": "baseline_build_failed",
+                        "configured_check_process_failed": "baseline_check_process_failed",
+                    }
+                    raise q.Blocked(
+                        environment.get(reason, "baseline_environment_failed")
+                    ) from error
+                work._set_status(connection, job_id, "failed", reason)
+                connection.execute("UPDATE meta SET value='true' WHERE key='quarantined'")
+                barrier.quarantine(reason)
+                outcome = {"status": "quarantined", "job_id": job_id, "reason": reason}
         if outcome["status"] != "quarantined":
             barrier.finish()  # Clear only after the SQLite transaction committed.
         return outcome

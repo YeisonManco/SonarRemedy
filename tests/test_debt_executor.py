@@ -228,6 +228,31 @@ class ExecutorTests(QueueFixture):
         self.assertFalse(any(part in ("bin", ".vs") for key in snap for part in key.split("/")))
         self.assertEqual(snap, e.snapshot(self.target))
 
+    def test_failed_build_persists_failure_receipt(self):
+        self.configure()
+        job = self.proposed()
+
+        def fail_build(argv, cwd, **kwargs):
+            return {"status": "exited", "exit_code": 1, "reason": "", "stdout": b"MSB3021 locked"}
+
+        # Baseline runs on the unmodified tree: the room is at fault, so the
+        # job stays proposed for retry instead of being stranded as deferred.
+        with self.assertRaisesRegex(q.Blocked, "baseline_build_failed"):
+            e.integrate(
+                self.queue(),
+                job,
+                execute=True,
+                control_root=self.control,
+                process_runner=fail_build,
+            )
+        self.assertEqual(self.queue().monitor()["states"].get("proposed", 0), 1)
+        matches = list(Path(self.state).rglob("*.failed.json"))
+        self.assertEqual(len(matches), 1)
+        data = q.parse_json(q.read_bytes(matches[0], q.MAX_EXPORT))
+        self.assertEqual(data["exit_code"], 1)
+        self.assertIn("MSB3021", data["stdout_tail"])
+        self.assertEqual(data["name"], "build")
+
     def test_failed_integrated_check_quarantines_and_preserves_preimages(self):
         self.configure()
         job = self.proposed()

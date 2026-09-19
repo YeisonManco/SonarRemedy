@@ -2,6 +2,13 @@
 
 All notable changes to SonarRemedy are documented here.
 
+## [0.6.5] - 2026-09-19
+
+### Fixed
+
+- **Lost check-failure evidence** — when a configured build/test check failed, the harness raised `configured_build_failed` but discarded the process receipt (exit code, compiler output), leaving nothing to diagnose. Failures now persist a bounded `*.failed.json` receipt (argv, exit code, stdout tail) next to the attempt before raising.
+- **Baseline failures stranded good proposals** — a build failing on the unmodified tree (locked file, red environment) deferred the job with `configured_build_failed`, but `deferred` is terminal: the proposal could never retry. Baseline-only failures now raise `baseline_build_failed` / `baseline_check_process_failed` with the job left `proposed`, so the same integrate retries after the environment is repaired. Red/green-phase failures keep the existing defer/quarantine path.
+
 ## [0.6.4] - 2026-09-19
 
 ### Fixed
