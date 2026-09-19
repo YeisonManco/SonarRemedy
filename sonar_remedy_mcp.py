@@ -182,7 +182,7 @@ TOOLS = [
     },
     {
         "name": "sonar_remedy_scan_exclusions",
-        "description": "Detect Sonar exclusions/suppressions by language, categorized (sonar/suppression/coverage/technical), with whitelist/blacklist from .sonarremedy/rules.json.",
+        "description": "SCAN the code to DETECT Sonar exclusions/suppressions (NOSONAR, @ts-ignore, #pragma, NoWarn, coverage exclusions) by language and category. Use this to FIND exclusions in the repository.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -192,7 +192,7 @@ TOOLS = [
     },
     {
         "name": "sonar_remedy_rules",
-        "description": "Manage the exclusion whitelist/blacklist: list, allow (whitelist), block (blacklist), remove.",
+        "description": "Show or edit the CONFIGURED exclusion whitelist/blacklist (list, allow=whitelist, block=blacklist, remove). This does NOT scan code — use sonar_remedy_scan_exclusions to detect exclusions.",
         "inputSchema": {
             "type": "object",
             "properties": {

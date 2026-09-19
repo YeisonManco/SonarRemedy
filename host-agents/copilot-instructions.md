@@ -40,16 +40,20 @@ When the user asks about technical debt, Sonar issues, "deuda técnica", or "rec
    remaining jobs × minutes-per-job). NEVER invent a human-effort estimate in
    weeks/months — that is a different question (people fixing by hand).
 
-8. **Exclusions / suppressions / omissions (separate from debt).** When the user
-   asks ONLY about Sonar exclusions, suppressions, NOSONAR, coverage exclusions,
-   or "excepciones técnicas" — without the full debt — use
-   `sonar_remedy_scan_exclusions`. It reports each finding with its rule, category,
-   and severity (HIGH/MEDIUM/LOW = the danger level). This is a SEPARATE, optional
-   scan; do NOT run the full fetch/slice pipeline for it. For suppressions only
-   (certain vs ambiguous) use `sonar_remedy_scan_suppressions`. To view or edit the
-   project's whitelist/blacklist use `sonar_remedy_rules`
-   (`list` / `allow` / `block` / `remove`); only `allow`/`block` when the USER
-   explicitly asks — the whitelist is a human decision, never auto-accept one.
+8. **Exclusions / suppressions / omissions (separate from debt).** Two DIFFERENT
+   tools exist — do NOT confuse them:
+   - `sonar_remedy_scan_exclusions` — SCANS the code and DETECTS exclusions
+     (NOSONAR, @ts-ignore, #pragma, NoWarn, coverage exclusions, …). When the user
+     asks to "find", "detect", or "buscar" exclusions/suppressions/omissions,
+     ALWAYS run this — it scans the repository. It reports each finding with its
+     rule, category, and severity (HIGH/MEDIUM/LOW = the danger level).
+   - `sonar_remedy_rules` — only SHOWS/EDITS the configured whitelist/blacklist
+     (rules the USER added). It is EMPTY until the user adds rules; it does NOT
+     scan the code.
+   NEVER answer "there are no exclusions" from `rules` alone — run
+   `sonar_remedy_scan_exclusions` FIRST. For suppressions only (certain vs
+   ambiguous) use `sonar_remedy_scan_suppressions`. Only `allow`/`block` a rule
+   when the USER explicitly asks — the whitelist is a human decision.
 
 9. **Exclusion correction is NOT automatic.** Unlike code smells (which the
    proposal workers fix), an exclusion/suppression may be LEGITIMATE (a justified
