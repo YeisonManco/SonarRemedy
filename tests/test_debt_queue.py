@@ -448,6 +448,25 @@ class LifecycleTests(QueueFixture):
         self.assertGreater(source["windows"][0]["start_line"], 1)
         self.assertLess(Path(receipt["context_path"]).stat().st_size, q.MAX_CONTEXT)
 
+    def test_large_file_window_covers_enclosing_method_not_blind_slice(self):
+        body = [f"        // line {i}\n" for i in range(1, 5001)]
+        lines = ["class A\n", "{\n", "    void Big()\n", "    {\n"] + body + ["    }\n", "}\n"]
+        content = "".join(lines)
+        (self.target / "a.cs").write_text(content, encoding="utf-8", newline="")
+        issue = self.issue()
+        issue["line"] = 2000  # inside the method (spans 1-based lines 4..5004)
+        self.write_export([issue])
+        self.create()
+        receipt = self.leased()
+        context = json.loads(Path(receipt["context_path"]).read_text())
+        window = context["sources"][0]["windows"][0]
+        # The window starts at the enclosing method (line 4), not line 1, and
+        # covers the issue line, bounded to the resolver's budget (not ±8 lines).
+        self.assertGreaterEqual(window["start_line"], 4)
+        self.assertLessEqual(window["start_line"], 2000)
+        self.assertIn("// line 1999\n", window["text"])
+        self.assertLess(window["end_line"] - window["start_line"] + 1, 5000)
+
     def test_context_overflow_defers_without_losing_1205_issues(self):
         self.write_export([self.issue("S" + str(i)) for i in range(1205)])
         self.create()

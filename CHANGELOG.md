@@ -2,6 +2,12 @@
 
 All notable changes to SonarRemedy are documented here.
 
+## [0.9.2] - 2026-09-20
+
+### Added
+
+- **Enclosing-scope context resolver** — for files over 16 KiB, the proposal window is no longer a blind ±8-line slice; it now resolves the enclosing brace block (method/class) for each finding and sends that bounded scope (default 120 lines, string/comment-aware). The worker sees the types, parameters and surrounding logic it needs to produce a correct fix, still capped so the token budget holds. Oversized blocks are centered and flagged partial (`need_more_context` still materializes the full file).
+
 ## [0.9.1] - 2026-09-19
 
 ### Fixed

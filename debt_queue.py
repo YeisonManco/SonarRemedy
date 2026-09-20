@@ -22,6 +22,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
+import context_resolver
 from debtpack import MAX_ISSUES, hidden_secret
 
 MAX_EXPORT = 1024 * 1024
@@ -793,8 +794,8 @@ class Queue:
             if not whole:
                 for issue in job["issues"]:
                     if issue["path"] == name:
-                        line = issue["line"] - 1
-                        intervals.append((max(0, line - 8), min(len(lines), line + 9)))
+                        block = context_resolver.enclosing_block(lines, issue["line"] - 1)
+                        intervals.append((block["start_line"] - 1, block["end_line"]))
                 if not intervals:
                     raise Blocked("explicit_context_window_required")
             merged = []

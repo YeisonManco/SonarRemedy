@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "sonarremedy"
-version = "0.9.1"
+version = "0.9.2"
 description = "Recover Sonar technical debt automatically — a proposal-only worker swarm with a serial integrator."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -27,7 +27,7 @@ py-modules = [
     "sonar_remedy", "sonar_remedy_config", "sonar_remedy_mcp",
     "debt_work", "debt_queue", "debt_executor", "debt_runner", "debt_transport", "debtpack",
     "sonar_client", "sonar_fetch", "sonar_local", "sonar_exclusions", "sonar_gateway",
-    "sonar_suppressions", "sonar_exclusions_report", "sonar_hooks",
+    "sonar_suppressions", "sonar_exclusions_report", "sonar_hooks", "context_resolver",
 ]
 
 [tool.ruff]
