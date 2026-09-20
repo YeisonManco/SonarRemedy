@@ -2,6 +2,12 @@
 
 All notable changes to SonarRemedy are documented here.
 
+## [0.9.3] - 2026-09-20
+
+### Changed
+
+- **Drive-to-completion Copilot prompts** — README now has four copy-paste prompts (start → write proposals → keep going → finish) so Copilot runs the whole `recover` loop to completion instead of stalling, plus the exact `proposal.json` contract inline.
+
 ## [0.9.2] - 2026-09-20
 
 ### Added

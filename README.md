@@ -165,11 +165,21 @@ If you skipped the install, replace `sonarremedy` with `python -B SonarRemedy/so
 
 Paste these in Copilot Chat, in order. Close Visual Studio before integrating (locked files fail the build gate).
 
-1. *"Recuperá la deuda del proyecto <name> en la rama <branch>: fetch y después slice a un state nuevo `state-<branch>`. Explicame qué trajiste."*
-2. *"Corre el run con execute y avisame cuando estén las propuestas."*
-3. *(it writes/resumes proposals)* — if it asks for checks: *"Corre `sonar_remedy_detect_checks` con el repo, presentame borrador + faltantes y esperá."*
-4. Complete the `[HUMAN]` fields (exact bound branch, policy/reason or real RED markers), save as `checks.json`, then: *"Corre el configure dry-run y mostrame el sha."*
-5. Verify the sha, then: *"Aprobado con ese sha. Ejecutá el configure e integrá con autopilot `--integrate`."*
+### 1. Start — tell Copilot to run the whole recovery, don't improvise
+
+> Recuperá la deuda técnica del proyecto `<name>` en la rama `<branch>` usando **SOLO los tools MCP de SonarRemedy** (`sonar_remedy_*`). No hagas trabajo manual, no leas el código fuente vos mismo, no improvises. Primero corré `sonar_remedy_doctor --repo <checkout>` y decime el estado. Después corré `sonar_remedy_recover` con el `checks.json` y su sha aprobado, `execute: true`. Seguí el loop hasta el final: fetch → slice → run → configure → integrate → re-scan. **No te detengas a preguntar** salvo que sea un bloqueo real (mirá la FAQ de troubleshooting); si algo falla, reportá el `reason` exacto y seguí.
+
+### 2. Write proposals — when `recover` reaches `run` and asks for proposals
+
+> Escribí una propuesta por cada job que te dé el tool, usando el contexto que te da (el método completo + la regla). Formato **exacto** del `proposal.json`: `{"version", "job_id", "attempt_id", "lease", "context_fingerprint", "status": "proposed", "edits": [{"path", "before_sha256", "replacements": [{"old", "new"}]}], "reason": "<token_sin_espacios>", "risks": [], "test_plan": "...", "follow_up": []}`. El `old` tiene que matchear **byte a byte** el archivo. Preservá comportamiento, BOM y newlines; no debilites tests, no agregues supresiones/exclusiones, no inventes prueba. Si un job necesita un refactor que cruza archivos, diferilo con `reason: "cross_file_refactor_required"`.
+
+### 3. Keep going — when Copilot stalls or asks "what next?"
+
+> Seguí con el loop, no te frenes. Si `recover` pide más propuestas, escribilas. Si un ciclo terminó (`re_scan_required`), el propio `recover` re-publica el análisis local y arranca el siguiente ciclo —no preguntes, seguí. Pará **solo** cuando devuelva `done` (0 issues) o `impossible` (todo terminal), o un bloqueo humano real.
+
+### 4. Finish — report and hand off to commit
+
+> Cuando termine, mostrame el resumen (cuántos `applied`/`locally_verified`, cuántos `deferred`/`failed` y por qué) y el diff de los cambios. Avisame cuando esté listo para commitear; yo reviso y commiteo/pusheo (el hook pre-push corre la suite antes del push).
 
 Standing rules (also wired into the Copilot instructions by `init`): never do the work manually, never commit/push with `--no-verify`, and on any `blocked` report the exact reason and stop — a failed baseline build keeps the job `proposed` for retry, it never applies anything red.
 
