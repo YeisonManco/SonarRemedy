@@ -72,5 +72,45 @@ class EnclosingBlockTests(unittest.TestCase):
             cr.enclosing_block([], 0, max_lines=3)
 
 
+class LanguageAwarePartialTests(unittest.TestCase):
+    """A brace depth of 0 means something different in Python/VB than in C#:
+    those languages never use `{`/`}` for blocks at all, so depth-0 is not
+    evidence of a real file-level scope -- the old code returned a
+    confidently-wrong `partial=False` there regardless of language."""
+
+    def test_python_like_file_marks_partial_true_not_false(self):
+        lines = [
+            "def outer():\n",
+            "    x = 1\n",
+            "    return x\n",  # issue here (index 2), indentation-based block
+        ]
+        block = cr.enclosing_block(lines, 2, path="module.py")
+        self.assertTrue(block["partial"])
+
+    def test_vb_file_marks_partial_true_not_false(self):
+        lines = [
+            "Module M\n",
+            "    Sub Main()\n",
+            "        Console.WriteLine(1)\n",  # issue here (index 2)
+            "    End Sub\n",
+            "End Module\n",
+        ]
+        block = cr.enclosing_block(lines, 2, path="module.vb")
+        self.assertTrue(block["partial"])
+
+    def test_known_brace_language_top_level_stays_confident(self):
+        lines = ["using System;\n", "var x = 1;\n"]
+        block = cr.enclosing_block(lines, 1, path="Program.cs")
+        self.assertFalse(block["partial"])
+
+    def test_missing_path_defaults_to_conservative(self):
+        # The real caller (debt_queue.py) does not currently pass a path, so
+        # the safe default -- when the language is unknown -- must also be
+        # conservative rather than silently confident.
+        lines = ["namespace X;\n", "using System;\n", "var x = 1;\n"]
+        block = cr.enclosing_block(lines, 2)
+        self.assertTrue(block["partial"])
+
+
 if __name__ == "__main__":
     unittest.main()

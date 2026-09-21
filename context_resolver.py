@@ -11,9 +11,52 @@ inside a string literal does not shift the block). A slightly-off window is
 advisory: the worker can still request the full file via `need_more_context`.
 """
 
+import os
 from typing import Any
 
 DEFAULT_MAX_LINES = 120
+
+# Extensions whose grammar uses brace-delimited blocks (`{`/`}`), matching
+# sonar_remedy.EXTENSION_LANGUAGE's brace-based languages. Kept as a small
+# local allowlist rather than importing sonar_remedy: this module is a lean,
+# stdlib-only leaf utility and sonar_remedy is the large top-level facade, so
+# importing it here would invert the dependency direction for no real gain.
+BRACE_DELIMITED_EXTENSIONS = frozenset(
+    {
+        ".cs",
+        ".java",
+        ".kt",
+        ".kts",
+        ".ts",
+        ".tsx",
+        ".js",
+        ".jsx",
+        ".mjs",
+        ".cjs",
+        ".go",
+        ".rs",
+        ".cpp",
+        ".cc",
+        ".cxx",
+        ".h",
+        ".hpp",
+        ".cshtml",
+        ".razor",
+    }
+)
+
+
+def is_brace_delimited(path: str | None) -> bool:
+    """True only when `path`'s extension is a KNOWN brace-delimited language.
+
+    An unknown, missing, or explicitly non-brace extension (e.g. `.py`,
+    `.vb`) returns False: a brace depth of 0 there is not real evidence that
+    a window is the true enclosing scope, so the caller should stay
+    conservative instead of confidently claiming a complete window.
+    """
+    if not path:
+        return False
+    return os.path.splitext(path)[1].lower() in BRACE_DELIMITED_EXTENSIONS
 
 
 def brace_depths(lines: list[str]) -> list[int]:
@@ -85,13 +128,24 @@ def brace_depths(lines: list[str]) -> list[int]:
 
 
 def enclosing_block(
-    lines: list[str], line_index: int, *, max_lines: int = DEFAULT_MAX_LINES
+    lines: list[str],
+    line_index: int,
+    *,
+    max_lines: int = DEFAULT_MAX_LINES,
+    path: str | None = None,
 ) -> dict[str, Any]:
     """Return the enclosing brace block for `line_index` (0-based), bounded.
 
     Returns `{start_line, end_line, partial}` with 1-based inclusive lines. When
     the block exceeds `max_lines` it is centered on the finding and `partial` is
     True (the worker may then request the full file).
+
+    `path` (optional) lets the caller identify the source language by
+    extension. For a language that does not use brace-delimited blocks at
+    all (Python, VB.NET, ...), or when `path` is not given, a brace depth of
+    0 carries no real information about the true enclosing scope, so the
+    result is marked `partial=True` instead of silently claiming a complete,
+    accurate window.
     """
     n = len(lines)
     if type(max_lines) is not int or not 8 <= max_lines <= 500:
@@ -101,10 +155,13 @@ def enclosing_block(
         return {"start_line": 1, "end_line": n, "partial": False}
     target = depths[line_index]
     if target <= 0:
-        # Not inside any brace block (file/namespace level): bounded window.
+        # Not inside any brace block (file/namespace level) -- OR the
+        # language isn't brace-delimited at all, so depth 0 is meaningless.
         start = max(0, line_index - max_lines // 2)
         end = min(n, start + max_lines)
-        return {"start_line": start + 1, "end_line": end, "partial": end - start >= max_lines}
+        truncated = end - start >= max_lines
+        partial = truncated or not is_brace_delimited(path)
+        return {"start_line": start + 1, "end_line": end, "partial": partial}
     # The block opens on the last line at/above `line_index` whose depth is below
     # `target` (that line holds the `{`), and closes on the first line at/after
     # `line_index` whose NEXT line drops below `target` (that line holds the `}`).

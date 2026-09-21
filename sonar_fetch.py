@@ -7,10 +7,11 @@ import math
 import os
 import re
 import subprocess
+import time
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
-from urllib.error import HTTPError
+from urllib.error import HTTPError, URLError
 
 from debtpack import MAX_ISSUES, PACK, read_json, relative, token
 from sonar_client import Blocked, Client, endpoint, normalize, pages, pages_all
@@ -379,6 +380,37 @@ def duplication_issue(entry: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _transient_fetch_error(error: Exception) -> bool:
+    """True for network/timeout/5xx (and 429) failures worth a bounded retry.
+
+    Auth/permission failures (401/403, any other 4xx) and validation errors
+    (`Blocked`) are NOT transient: they fail fast on the first attempt.
+    """
+    if isinstance(error, HTTPError):
+        return error.code >= 500 or error.code == 429
+    if isinstance(error, TimeoutError):
+        return True
+    return isinstance(error, URLError)
+
+
+def _with_retry(call: Callable[[], Any], attempts: int = 3, base_delay: float = 1.0) -> Any:
+    """Run `call`, retrying up to `attempts` times with short exponential
+    backoff, but only for a transient failure (see `_transient_fetch_error`).
+    Any other exception -- including a 401/403 or a `Blocked` validation
+    error -- propagates immediately without retry.
+    """
+    error: Exception | None = None
+    for attempt in range(attempts):
+        try:
+            return call()
+        except Exception as caught:
+            if not _transient_fetch_error(caught) or attempt == attempts - 1:
+                raise
+            error = caught
+            time.sleep(base_delay * (2**attempt))
+    raise error  # pragma: no cover - loop always returns or raises above
+
+
 def fetch(config: Config, output: str | Path) -> dict[str, Any]:
     secret = os.environ.get("SONAR_TOKEN", "")
     if not secret or secret.strip() != secret or any(ord(x) < 33 for x in secret):
@@ -432,7 +464,10 @@ def fetch(config: Config, output: str | Path) -> dict[str, Any]:
     if config.severities is not None:
         issue_params["severities"] = config.severities
     if kinds & {"smells", "security"}:
-        issues = pages_all(get, "api/issues/search", "issues", issue_params)
+        # Issues are the primary data (unlike hotspots/coverage/duplication/gate
+        # conditions below, which degrade gracefully): a transient failure
+        # mid-pagination must not abort and discard the whole fetch.
+        issues = _with_retry(lambda: pages_all(get, "api/issues/search", "issues", issue_params))
     else:
         issues = []
     excluded_count = 0
@@ -616,9 +651,15 @@ def main() -> int:
         return 0 if result["status"] == "collected" else 2
     except Exception as error:
         secret = os.environ.get("SONAR_TOKEN", "")
-        reason = (
-            redactor(secret)(str(error)) if isinstance(error, Blocked) else type(error).__name__
-        )
+        if isinstance(error, Blocked):
+            reason = redactor(secret)(str(error))
+        elif isinstance(error, HTTPError):
+            # Safe and short: the status code alone (never the raw body or
+            # message), so a 401 (expired token) and a 500 (Sonar down) are
+            # distinguishable instead of both reporting generic "HTTPError".
+            reason = f"http error {error.code}"
+        else:
+            reason = type(error).__name__
         print(json.dumps({"status": "blocked", "reason": reason}))
         return 2
 

@@ -3,7 +3,9 @@
 import json
 import os
 import tempfile
+import threading
 import unittest
+from unittest.mock import patch
 
 import sonar_remedy_config as rc
 
@@ -378,6 +380,41 @@ class QueueRegistryTests(unittest.TestCase):
             handle.write("{not json")
         self.assertEqual(rc.project_for_queue(os.path.join(self.tmp.name, "q")), None)
         self.assertEqual(rc.queues_for_project("front"), [])
+
+    def test_concurrent_registrations_do_not_clobber_each_other(self):
+        # Two "different projects" (e.g. two concurrent slice --execute runs
+        # for two projects on the same machine) register at the same time.
+        # Without serializing the read-modify-write, whichever writer's stale
+        # in-memory read wins last silently drops the other's registration.
+        state_a = os.path.join(self.tmp.name, "qa")
+        state_b = os.path.join(self.tmp.name, "qb")
+        original_read = rc._read_queue_registry
+
+        def slow_read():
+            data = original_read()
+            # Widen the race window between read and write so an unlocked
+            # implementation reliably interleaves the two calls.
+            threading.Event().wait(0.05)
+            return data
+
+        barrier = threading.Barrier(2)
+
+        def worker(project, state):
+            barrier.wait(timeout=5)
+            rc.register_queue(project, state)
+
+        with patch.object(rc, "_read_queue_registry", side_effect=slow_read):
+            t1 = threading.Thread(target=worker, args=("front", state_a))
+            t2 = threading.Thread(target=worker, args=("back", state_b))
+            t1.start()
+            t2.start()
+            t1.join(timeout=10)
+            t2.join(timeout=10)
+
+        self.assertFalse(t1.is_alive())
+        self.assertFalse(t2.is_alive())
+        self.assertEqual(rc.project_for_queue(state_a), "front")
+        self.assertEqual(rc.project_for_queue(state_b), "back")
 
 
 class DetectBranchTests(unittest.TestCase):

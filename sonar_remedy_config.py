@@ -7,12 +7,14 @@ references the environment-variable NAMES, never the secret values.
 """
 
 import argparse
+import contextlib
 import getpass
 import json
 import os
 import re
 import subprocess
-from collections.abc import Callable
+import time
+from collections.abc import Callable, Iterator
 from typing import Any
 from urllib.parse import unquote, urlsplit, urlunsplit
 
@@ -421,15 +423,61 @@ def _write_queue_registry(registry: dict[str, list[str]]) -> None:
     os.replace(tmp, queue_registry_path())
 
 
+_REGISTRY_LOCK_TIMEOUT = 10.0  # seconds
+_REGISTRY_LOCK_POLL = 0.05  # seconds
+
+
+@contextlib.contextmanager
+def _queue_registry_lock() -> Iterator[None]:
+    """Serialize registry read-modify-write across concurrent callers.
+
+    The queue registry (``~/.sonar-remedy/queues.json``) is global and
+    shared across every project on the machine, so two concurrent
+    registrations (e.g. two ``slice --execute``/``recover`` runs for two
+    different projects) can otherwise race: both read the same snapshot,
+    and whichever writes last silently drops the other's registration.
+
+    Uses a portable, stdlib-only, atomic exclusive-create lock file (works
+    for both threads and separate processes) rather than a platform-specific
+    API, so it needs no extra dependency and no OS-specific branch.
+    """
+    lock_path = queue_registry_path() + ".lock"
+    os.makedirs(os.path.dirname(lock_path), exist_ok=True)
+    deadline = time.monotonic() + _REGISTRY_LOCK_TIMEOUT
+    while True:
+        try:
+            fd = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+        except FileExistsError:
+            if time.monotonic() >= deadline:
+                raise ConfigError(
+                    "queue registry lock timed out; another process may be stuck"
+                ) from None
+            time.sleep(_REGISTRY_LOCK_POLL)
+            continue
+        break
+    try:
+        os.close(fd)
+        yield
+    finally:
+        with contextlib.suppress(OSError):
+            os.remove(lock_path)
+
+
 def register_queue(project: str, state_dir: str) -> None:
-    """Record ``state_dir`` under ``project`` in the queue index (idempotent)."""
-    registry = _read_queue_registry()
-    queues = registry.get(project, [])
-    canonical = canonical_path(state_dir)
-    if not any(canonical_path(q) == canonical for q in queues):
-        queues.append(canonical)
-    registry[project] = queues
-    _write_queue_registry(registry)
+    """Record ``state_dir`` under ``project`` in the queue index (idempotent).
+
+    The whole read-modify-write is serialized by `_queue_registry_lock` so
+    two concurrent registrations for different projects/queues both persist
+    instead of one clobbering the other.
+    """
+    with _queue_registry_lock():
+        registry = _read_queue_registry()
+        queues = registry.get(project, [])
+        canonical = canonical_path(state_dir)
+        if not any(canonical_path(q) == canonical for q in queues):
+            queues.append(canonical)
+        registry[project] = queues
+        _write_queue_registry(registry)
 
 
 def project_for_queue(state_dir: str) -> str | None:

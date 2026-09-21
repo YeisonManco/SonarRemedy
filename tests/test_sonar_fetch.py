@@ -808,6 +808,126 @@ class FetchTests(unittest.TestCase):
         ):
             self.assertEqual(f.main(), 2)
 
+    def test_main_reports_http_status_code_not_generic_class_name(self):
+        # A 401 (expired token) and a 500 (Sonar down) must not both collapse
+        # into the same generic "HTTPError" reason string.
+        import contextlib
+        import io
+        from urllib.error import HTTPError
+
+        def run(status):
+            buffer = io.StringIO()
+            with (
+                contextlib.redirect_stdout(buffer),
+                patch.object(sys, "argv", ["sonar_fetch.py", "config.json"]),
+                patch.object(f, "read_json", return_value={}),
+                patch.object(f, "Config", return_value=object()),
+                patch.object(
+                    f,
+                    "fetch",
+                    side_effect=HTTPError("https://sonar.example.test/api", status, "x", [], None),
+                ),
+            ):
+                code = f.main()
+            return code, json.loads(buffer.getvalue())
+
+        code_401, payload_401 = run(401)
+        code_500, payload_500 = run(500)
+        self.assertEqual(code_401, 2)
+        self.assertEqual(code_500, 2)
+        self.assertEqual(payload_401["reason"], "http error 401")
+        self.assertEqual(payload_500["reason"], "http error 500")
+        self.assertNotEqual(payload_401["reason"], payload_500["reason"])
+        self.assertNotIn("HTTPError", payload_401["reason"])
+
+    def test_issues_fetch_retries_transient_failure_then_succeeds(self):
+        from urllib.error import HTTPError
+
+        calls = {"issues": 0}
+
+        def get(path, **params):
+            if path == "api/issues/search":
+                calls["issues"] += 1
+                if calls["issues"] == 1:
+                    raise HTTPError(
+                        "https://sonar.example.test/api/issues/search", 503, "busy", [], None
+                    )
+                return copy.deepcopy(self.responses[path])
+            return copy.deepcopy(self.responses[path])
+
+        with (
+            patch.object(f, "git_dirty", return_value=False),
+            patch.object(f.time, "sleep", return_value=None) as sleep_mock,
+        ):
+            result = self.fetch(get=get)
+        self.assertEqual(result["status"], "collected")
+        self.assertEqual(result["issues_total"], 4)
+        self.assertEqual(calls["issues"], 2)
+        self.assertTrue(sleep_mock.called)
+
+    def test_issues_fetch_persistent_failure_fails_cleanly_not_infinite(self):
+        from urllib.error import HTTPError
+
+        calls = {"issues": 0}
+
+        def get(path, **params):
+            if path == "api/issues/search":
+                calls["issues"] += 1
+                raise HTTPError(
+                    "https://sonar.example.test/api/issues/search", 503, "busy", [], None
+                )
+            return copy.deepcopy(self.responses[path])
+
+        with (
+            patch.object(f, "git_dirty", return_value=False),
+            patch.object(f.time, "sleep", return_value=None),
+            self.assertRaises(HTTPError),
+        ):
+            self.fetch(get=get)
+        # bounded: a small, fixed number of attempts, never an infinite retry loop
+        self.assertLessEqual(calls["issues"], 5)
+        self.assertGreaterEqual(calls["issues"], 2)
+
+    def test_issues_fetch_auth_error_fails_fast_without_retry(self):
+        from urllib.error import HTTPError
+
+        calls = {"issues": 0}
+
+        def get(path, **params):
+            if path == "api/issues/search":
+                calls["issues"] += 1
+                raise HTTPError(
+                    "https://sonar.example.test/api/issues/search", 401, "unauthorized", [], None
+                )
+            return copy.deepcopy(self.responses[path])
+
+        with (
+            patch.object(f, "git_dirty", return_value=False),
+            patch.object(f.time, "sleep", return_value=None) as sleep_mock,
+            self.assertRaises(HTTPError),
+        ):
+            self.fetch(get=get)
+        self.assertEqual(calls["issues"], 1)
+        self.assertFalse(sleep_mock.called)
+
+    def test_issues_fetch_blocked_validation_error_fails_fast_without_retry(self):
+        calls = {"issues": 0}
+
+        def get(path, **params):
+            if path == "api/issues/search":
+                calls["issues"] += 1
+                raise f.Blocked("issues shape invalid")
+            return copy.deepcopy(self.responses[path])
+
+        with (
+            patch.object(f, "git_dirty", return_value=False),
+            patch.object(f.time, "sleep", return_value=None) as sleep_mock,
+            self.assertRaises(f.Blocked),
+        ):
+            self.fetch(get=get)
+        self.assertEqual(calls["issues"], 1)
+        self.assertFalse(sleep_mock.called)
+
 
 if __name__ == "__main__":
     unittest.main()
