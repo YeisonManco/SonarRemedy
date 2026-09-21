@@ -160,6 +160,34 @@ def precheck_proposal(
     return _ask_noul(state, instructions, criteria, timeout=timeout, question_key="addresses_issue")
 
 
+def hotspot_risk_score(rule: str, path: str, source: str, *, timeout: int = 15) -> dict[str, Any]:
+    """Ask a cheap yes/no question: does this security hotspot look like a genuine risk?
+
+    Advisory-only triage signal for a human reviewing a deferred security
+    hotspot -- `debt_queue.plan()` always defers `hotspots`-kind issues for
+    human review and this never changes that; it only attaches an extra
+    signal the human sees alongside the deferred job. Same never-raises,
+    opt-in-via-env-var contract as `_ask_noul`; see that docstring for the
+    shared behavior.
+    """
+    state = {
+        "rule": str(rule),
+        "path": str(path),
+        # Bounded the same way precheck_proposal bounds edit text: never the
+        # full file/source excerpt available at intake.
+        "source": _cut(str(source), MAX_EDIT_CHARS),
+    }
+    instructions = (
+        "Does this security hotspot look like a genuine risk requiring careful review, "
+        "or does it look like a likely false positive / already-safe pattern?"
+    )
+    criteria = {
+        "true": "The pattern looks like a real, exploitable risk in this context",
+        "false": "The pattern looks safe, already mitigated, or a likely false positive",
+    }
+    return _ask_noul(state, instructions, criteria, timeout=timeout, question_key="genuine_risk")
+
+
 def legitimacy_score(
     rule: str, category: str, file: str, evidence: str, *, timeout: int = 15
 ) -> dict[str, Any]:

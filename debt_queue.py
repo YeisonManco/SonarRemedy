@@ -23,6 +23,7 @@ from pathlib import Path
 from typing import Any
 
 import context_resolver
+import typesafe_client
 from debtpack import MAX_ISSUES, hidden_secret
 
 MAX_EXPORT = 1024 * 1024
@@ -30,6 +31,10 @@ MAX_SOURCE = 10 * 1024 * 1024
 MAX_CONTEXT = 64 * 1024
 MAX_RESULT = 256 * 1024
 MAX_ARTIFACTS = 1024 * 1024 * 1024
+# Advisory TypeSafe hotspot-risk scoring at intake: opt-in via TYPESAFE_API_KEY,
+# bounded even when the key is set, so a large export never turns plan() into
+# hundreds of API calls. Mirrors sonar_exclusions_report.py's MAX_SCORED.
+MAX_SCORED_HOTSPOTS = 20
 KINDS = ("security", "hotspots", "smells", "coverage", "duplication")
 STATES = (
     "pending",
@@ -418,6 +423,34 @@ def plan(
     for entry in entries:
         if by_id[entry["job_id"]]["status"] == "deferred" and not entry["reason"]:
             entry.update(status="deferred", reason="group_contains_deferred_entry")
+    # Advisory-only TypeSafe hotspot risk scoring: opt-in via TYPESAFE_API_KEY,
+    # bounded to MAX_SCORED_HOTSPOTS, only for deferred `hotspots`-kind jobs
+    # (never `security`, even when it was also deferred for human review).
+    # This never gates/blocks/defers a job -- it only attaches an advisory
+    # field for the human who reviews deferred hotspots later (`document()`).
+    # plan() never opens a database connection or holds a lock (slice_queue
+    # only creates/opens the SQLite state after plan() returns), so this
+    # network call cannot hold a transaction open the way claim() would have.
+    if os.environ.get("TYPESAFE_API_KEY"):
+        hotspot_jobs = sorted(
+            (j for j in groups.values() if j["kind"] == "hotspots" and j["status"] == "deferred"),
+            key=lambda j: j["id"],
+        )
+        for job in hotspot_jobs[:MAX_SCORED_HOTSPOTS]:
+            first_issue = job["issues"][0]
+            try:
+                content = read_bytes(source_path(root, job["path"]), MAX_SOURCE)
+                text = content.decode("utf-8")
+            except (Blocked, OSError, UnicodeError):
+                continue
+            lines = text.splitlines(keepends=True)
+            block = context_resolver.enclosing_block(
+                lines, first_issue["line"] - 1, path=job["path"]
+            )
+            excerpt = "".join(lines[block["start_line"] - 1 : block["end_line"]])
+            job["typesafe_hotspot_risk"] = typesafe_client.hotspot_risk_score(
+                first_issue["rule"], job["path"], excerpt
+            )
     return {
         "binding": binding,
         "entries": entries,
@@ -1214,6 +1247,12 @@ class Queue:
                     "status": j["status"],
                     "reason": j["reason"],
                     "issue_ordinals": [i["ordinal"] for i in j["issues"]],
+                    # Advisory-only; present only for a scored deferred hotspot job.
+                    **(
+                        {"typesafe_hotspot_risk": j["typesafe_hotspot_risk"]}
+                        if "typesafe_hotspot_risk" in j
+                        else {}
+                    ),
                 }
                 for j in self._jobs(connection)
             ]

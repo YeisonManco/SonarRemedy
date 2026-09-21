@@ -3,6 +3,7 @@
 import copy
 import hashlib
 import json
+import os
 import sqlite3
 import subprocess
 import sys
@@ -174,6 +175,109 @@ class IntakeTests(QueueFixture):
         self.assertEqual(result["status"], "dry-run")
         self.assertEqual(len(result["entries"]), 1)
         self.assertFalse(self.state.exists())
+
+
+class TypeSafeHotspotRiskScoringTests(QueueFixture):
+    """Advisory-only, opt-in-via-env-var: zero behavior change with no key.
+
+    plan() never opens a database connection or holds a lock (slice_queue
+    only creates/opens the SQLite state after plan() returns), so scoring
+    here cannot block a held transaction the way claim() would have.
+    """
+
+    def setUp(self):
+        super().setUp()
+        patcher = patch.dict(os.environ, {}, clear=False)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        os.environ.pop("TYPESAFE_API_KEY", None)
+
+    def test_no_key_leaves_hotspot_job_unchanged_and_makes_no_calls(self):
+        self.write_export([self.issue("H1", kind="hotspots")])
+        with patch("typesafe_client.hotspot_risk_score") as scorer:
+            preview = q.plan(self.target, self.export, "feature/queue")
+        scorer.assert_not_called()
+        job = preview["jobs"][0]
+        self.assertEqual(job["kind"], "hotspots")
+        self.assertEqual(job["status"], "deferred")
+        self.assertNotIn("typesafe_hotspot_risk", job)
+
+    def test_key_set_scores_deferred_hotspot_job(self):
+        os.environ["TYPESAFE_API_KEY"] = "secret-token"
+        self.write_export([self.issue("H1", kind="hotspots")])
+        with patch(
+            "typesafe_client.hotspot_risk_score", return_value={"status": "ok", "noul": 0.8}
+        ) as scorer:
+            preview = q.plan(self.target, self.export, "feature/queue")
+        self.assertEqual(scorer.call_count, 1)
+        self.assertEqual(scorer.call_args.args[0], "csharp:S1")
+        self.assertEqual(scorer.call_args.args[1], "a.cs")
+        job = preview["jobs"][0]
+        self.assertEqual(job["typesafe_hotspot_risk"], {"status": "ok", "noul": 0.8})
+
+    def test_security_kind_deferred_job_is_never_scored(self):
+        os.environ["TYPESAFE_API_KEY"] = "secret-token"
+        self.write_export([self.issue("S1", kind="security", ambiguous=True)])
+        with patch("typesafe_client.hotspot_risk_score") as scorer:
+            preview = q.plan(self.target, self.export, "feature/queue")
+        scorer.assert_not_called()
+        job = preview["jobs"][0]
+        self.assertEqual(job["kind"], "security")
+        self.assertEqual(job["status"], "deferred")
+        self.assertNotIn("typesafe_hotspot_risk", job)
+
+    def test_smells_kind_pending_job_is_never_scored(self):
+        os.environ["TYPESAFE_API_KEY"] = "secret-token"
+        self.write_export([self.issue("S1", kind="smells")])
+        with patch("typesafe_client.hotspot_risk_score") as scorer:
+            preview = q.plan(self.target, self.export, "feature/queue")
+        scorer.assert_not_called()
+        job = preview["jobs"][0]
+        self.assertEqual(job["kind"], "smells")
+        self.assertNotIn("typesafe_hotspot_risk", job)
+
+    def test_smells_job_is_byte_for_byte_identical_regardless_of_typesafe_key(self):
+        self.write_export([self.issue("S1"), self.issue("H1", path="b.cs", kind="hotspots")])
+        baseline = q.plan(self.target, self.export, "feature/queue")
+        baseline_smells = next(j for j in baseline["jobs"] if j["kind"] == "smells")
+        os.environ["TYPESAFE_API_KEY"] = "secret-token"
+        with patch(
+            "typesafe_client.hotspot_risk_score", return_value={"status": "ok", "noul": 0.9}
+        ):
+            scored = q.plan(self.target, self.export, "feature/queue")
+        scored_smells = next(j for j in scored["jobs"] if j["kind"] == "smells")
+        self.assertEqual(baseline_smells, scored_smells)
+
+    def test_scoring_is_bounded_per_plan_call(self):
+        os.environ["TYPESAFE_API_KEY"] = "secret-token"
+        self.write_export([self.issue(f"H{i}", path=f"h{i}.cs", kind="hotspots") for i in range(3)])
+        for i in range(3):
+            (self.target / f"h{i}.cs").write_text(f"class H{i} {{ }}\n", encoding="utf-8")
+        with patch(
+            "typesafe_client.hotspot_risk_score", return_value={"status": "ok", "noul": 0.5}
+        ) as scorer:
+            with patch.object(q, "MAX_SCORED_HOTSPOTS", 2):
+                q.plan(self.target, self.export, "feature/queue")
+        self.assertEqual(scorer.call_count, 2)
+
+    def test_document_report_includes_hotspot_risk_score(self):
+        os.environ["TYPESAFE_API_KEY"] = "secret-token"
+        self.write_export([self.issue("H1", kind="hotspots")])
+        with patch(
+            "typesafe_client.hotspot_risk_score", return_value={"status": "ok", "noul": 0.8}
+        ):
+            self.create()
+        self.queue().document(execute=True)
+        report = json.loads((self.state / "report.json").read_text())
+        hotspot_job = next(j for j in report["jobs"] if j["kind"] == "hotspots")
+        self.assertEqual(hotspot_job["typesafe_hotspot_risk"], {"status": "ok", "noul": 0.8})
+
+    def test_document_report_omits_hotspot_risk_key_when_absent(self):
+        self.create()
+        self.queue().document(execute=True)
+        report = json.loads((self.state / "report.json").read_text())
+        for job in report["jobs"]:
+            self.assertNotIn("typesafe_hotspot_risk", job)
 
 
 class LifecycleTests(QueueFixture):

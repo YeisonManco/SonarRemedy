@@ -306,5 +306,62 @@ class LegitimacyScoreTests(unittest.TestCase):
         self.assertEqual(result["status"], "error")
 
 
+def hotspot_ok_body(noul=0.62):
+    return json.dumps({"answers": {"genuine_risk": {"type": "noul", "noul": noul}}}).encode()
+
+
+class HotspotRiskScoreTests(unittest.TestCase):
+    def setUp(self):
+        patcher = mock.patch.dict(os.environ, {}, clear=False)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        os.environ.pop("TYPESAFE_API_KEY", None)
+
+    def test_missing_key_returns_unavailable_without_network_call(self):
+        fake = FakeOpener()
+        with mock.patch("typesafe_client._opener", return_value=fake):
+            result = tc.hotspot_risk_score("csharpsquid:S2076", "src/a.cs", "os.system(cmd)")
+        self.assertEqual(result, {"status": "unavailable", "reason": "TYPESAFE_API_KEY not set"})
+        self.assertEqual(fake.calls, [])
+
+    def test_successful_response_sends_rule_path_and_bounded_source(self):
+        os.environ["TYPESAFE_API_KEY"] = "secret-token"
+        fake = FakeOpener(response=FakeResponse(hotspot_ok_body(0.62)))
+        with mock.patch("typesafe_client._opener", return_value=fake):
+            result = tc.hotspot_risk_score("csharpsquid:S2076", "src/a.cs", "x" * 5000)
+        self.assertEqual(result, {"status": "ok", "noul": 0.62})
+        request, timeout = fake.calls[0]
+        self.assertEqual(timeout, 15)
+        self.assertEqual(request.get_header("Authorization"), "Bearer secret-token")
+        sent = json.loads(request.data)
+        self.assertEqual(sent["state"]["rule"], "csharpsquid:S2076")
+        self.assertEqual(sent["state"]["path"], "src/a.cs")
+        self.assertLessEqual(len(sent["state"]["source"]), tc.MAX_EDIT_CHARS)
+        self.assertEqual(sent["questions"]["genuine_risk"]["type"], "noul")
+
+    def test_custom_timeout_is_forwarded(self):
+        os.environ["TYPESAFE_API_KEY"] = "secret-token"
+        fake = FakeOpener(response=FakeResponse(hotspot_ok_body()))
+        with mock.patch("typesafe_client._opener", return_value=fake):
+            tc.hotspot_risk_score("rule", "path", "source", timeout=5)
+        self.assertEqual(fake.calls[0][1], 5)
+
+    def test_network_error_returns_error_without_raising(self):
+        os.environ["TYPESAFE_API_KEY"] = "secret-token"
+        fake = FakeOpener(error=URLError("no route to host"))
+        with mock.patch("typesafe_client._opener", return_value=fake):
+            result = tc.hotspot_risk_score("rule", "path", "source")
+        self.assertEqual(result["status"], "error")
+        self.assertNotIn("secret-token", result["reason"])
+
+    def test_unexpected_shape_returns_error_without_raising(self):
+        os.environ["TYPESAFE_API_KEY"] = "secret-token"
+        body = json.dumps({"unexpected": True}).encode()
+        fake = FakeOpener(response=FakeResponse(body))
+        with mock.patch("typesafe_client._opener", return_value=fake):
+            result = tc.hotspot_risk_score("rule", "path", "source")
+        self.assertEqual(result["status"], "error")
+
+
 if __name__ == "__main__":
     unittest.main()
