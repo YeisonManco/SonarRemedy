@@ -1,11 +1,12 @@
 # Safe debt queue: operator rules
 
-> **Internal/advanced interface — bypasses `sonar_remedy.py` safety.** These
-> rules document `debt_work.py`'s raw interface to the same queue engine that
-> `sonar_remedy.py` wraps with project auto-detection, `doctor`, and
-> queue↔project registration. For day-to-day debt recovery, prefer
-> `README.md` and `host-agents/sonar-remedy-orchestrator.md`. This document
-> remains fully supported for advanced/manual use.
+> **Deprecated — scheduled for removal, bypasses `sonar_remedy.py` safety.**
+> These rules document `debt_work.py`'s raw interface to the same queue
+> engine that `sonar_remedy.py` wraps with project auto-detection, `doctor`,
+> and queue↔project registration. `debt_work.py`'s direct CLI is deprecated
+> and will be removed in a future release; use `sonarremedy` (via `README.md`
+> and `host-agents/sonar-remedy-orchestrator.md`) instead. This document
+> remains supported during the deprecation window for advanced/manual use.
 
 Use [work-queue.md](work-queue.md) for commands and [agent-contract.md](agent-contract.md) for the canonical contract. These rules apply to the SQLite queue, not legacy `debtpack.py` JSON plans.
 

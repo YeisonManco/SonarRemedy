@@ -1,14 +1,15 @@
 # Manual proposals, serial integration, honest evidence
 
-> **Internal/advanced interface — bypasses `sonar_remedy.py` safety.** This is
-> the canonical `debt_work.py` command/schema reference — the raw interface to
-> the same queue engine (`debt_queue.py`/`debt_executor.py`) that
-> `sonar_remedy.py` wraps with project auto-detection, `doctor`, and
-> queue↔project registration. For day-to-day debt recovery, prefer
-> `README.md` and `host-agents/sonar-remedy-orchestrator.md`, which drive this
-> same engine through that safety layer. This document remains fully
-> supported for advanced/manual use, and its `proposal` contract below is
-> shared by both interfaces (`sonar_remedy.py` drives the identical
+> **Deprecated — scheduled for removal, bypasses `sonar_remedy.py` safety.**
+> This is the canonical `debt_work.py` command/schema reference — the raw
+> interface to the same queue engine (`debt_queue.py`/`debt_executor.py`)
+> that `sonar_remedy.py` wraps with project auto-detection, `doctor`, and
+> queue↔project registration. `debt_work.py`'s direct CLI is deprecated and
+> will be removed in a future release; use `sonarremedy` (via `README.md` and
+> `host-agents/sonar-remedy-orchestrator.md`) instead, which drives this same
+> engine through that safety layer. This document remains supported during
+> the deprecation window for advanced/manual use, and its `proposal` contract
+> below is shared by both interfaces (`sonar_remedy.py` drives the identical
 > `debt_queue.py` validator).
 
 `debt_work.py` retains every supplied issue ordinal in SQLite, groups work by exact path and kind, leases immutable bounded contexts, and records proposals. Default commands do not edit the target. Explicitly configured `integrate --execute` or `run --integrate --execute` can apply existing-file replacements and run serial local checks. No command launches a native model provider, commits, scans or confirms a Sonar finding. Manual JSON proposals work without any model runtime.

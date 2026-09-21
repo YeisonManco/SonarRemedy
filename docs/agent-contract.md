@@ -1,16 +1,18 @@
 # Sonar debt queue: canonical operating contract
 
-> **Internal/advanced interface — bypasses `sonar_remedy.py` safety.** This file
-> documents `debt_work.py`, a real, lower-level interface to the same queue
-> engine (`debt_queue.py`/`debt_executor.py`) that `sonar_remedy.py` wraps.
-> Driving it directly skips `sonar_remedy.py`'s safety layer — project
-> auto-detection, `doctor`, and queue↔project registration — so YOU are
-> responsible for checkout identity and project binding. For day-to-day debt
-> recovery, prefer `README.md` and
-> `host-agents/sonar-remedy-orchestrator.md`, which drive this same engine
-> through that safety layer. This document remains fully supported for
-> advanced/manual use — it is the canonical contract for [work-queue.md](work-queue.md)'s
-> commands and `proposal` schema below.
+> **Deprecated — scheduled for removal, bypasses `sonar_remedy.py` safety.**
+> This file documents `debt_work.py`, a real, lower-level interface to the
+> same queue engine (`debt_queue.py`/`debt_executor.py`) that
+> `sonar_remedy.py` wraps. Driving it directly skips `sonar_remedy.py`'s
+> safety layer — project auto-detection, `doctor`, and queue↔project
+> registration — so YOU are responsible for checkout identity and project
+> binding. `debt_work.py`'s direct CLI is deprecated and will be removed in a
+> future release; use `sonarremedy` (via `README.md` and
+> `host-agents/sonar-remedy-orchestrator.md`) instead, which drives this same
+> engine through that safety layer. This document remains supported during
+> the deprecation window for advanced/manual use — it is the canonical
+> contract for [work-queue.md](work-queue.md)'s commands and `proposal`
+> schema below.
 
 The safe workflow is [work-queue.md](work-queue.md), implemented by `debt_work.py`, `debt_queue.py`, `debt_executor.py`, `debt_transport.py` and `debt_runner.py`. This contract takes precedence over historical direct-worker-edit/scan guidance for queue work, without weakening higher host policy. The legacy `debtpack.py` workflow remains separate; never mix its state or evidence with the queue.
 

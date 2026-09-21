@@ -4,6 +4,10 @@ All notable changes to SonarRemedy are documented here.
 
 ## Unreleased
 
+### Deprecated
+
+- **`debt_work.py`'s direct CLI is deprecated** — it drives the same queue engine (`debt_queue.py`/`debt_executor.py`) as `sonar_remedy.py`, but with none of `sonar_remedy.py`'s safety layer (project auto-detection, `doctor`, queue↔project registration): two interfaces to one engine, which already caused a real documentation-drift bug. `debt_work.py`'s CLI now prints a deprecation warning to stderr on every invocation and keeps working exactly as before otherwise; `docs/work-queue.md`, `docs/agent-contract.md`, `docs/agent-rules.md` and `docs/validation.md` now say plainly it is scheduled for removal instead of just "advanced". Use `sonarremedy` instead. Full removal is deferred to a later release, not scheduled here.
+
 ### Added
 
 - **Project auto-detection from the current checkout** — `resolve_project_for_checkout` (config module) matches a local checkout to exactly one saved project by canonical `local_path` or normalized git remote URL (credentials stripped, so a PAT embedded in a remote never blocks the match). `doctor` now reports which project binds to the checkout (a `project` check: `ok` / `ambiguous` / `warning`), and `_load_config` auto-selects the matching project when neither `--config` nor `--project` is passed — so a recovery driven from inside a checkout no longer runs against the wrong project. No match falls back to the default config; an ambiguous match fails with a clear "pass --project" error.

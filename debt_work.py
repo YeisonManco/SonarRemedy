@@ -2,12 +2,19 @@
 
 import argparse
 import json
+import sys
 from collections import Counter
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
 import debt_queue as queue
+
+DEPRECATION_WARNING = (
+    "WARNING: debt_work.py's direct CLI is deprecated. It bypasses sonar_remedy.py's"
+    " safety checks (project auto-detection, doctor, queue registration) and will be"
+    " removed in a future release. Use `sonarremedy` instead."
+)
 
 
 def parser() -> argparse.ArgumentParser:
@@ -107,6 +114,7 @@ def main(
     identity_reader: Callable[[Path], dict[str, str]] | None = None,
 ) -> int:
     args = parser().parse_args(argv)
+    print(DEPRECATION_WARNING, file=sys.stderr)
     try:
         if args.command == "slice":
             result = queue.slice_queue(

@@ -95,6 +95,27 @@ class QueueCliTests(QueueFixture):
         self.assertFalse((self.target / ".git").exists())
         self.assertFalse(self.state.exists())
 
+    def test_deprecation_warning_on_stderr_does_not_affect_stdout_or_exit_code(self):
+        self.create()
+        result = subprocess.run(
+            [
+                sys.executable,
+                "-B",
+                str(PACK / "debt_work.py"),
+                "--state",
+                str(self.state),
+                "monitor",
+            ],
+            cwd=PACK,
+            capture_output=True,
+            text=True,
+            timeout=20,
+        )
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(json.loads(result.stdout)["entries"], 1)
+        self.assertIn("deprecated", result.stderr.lower())
+        self.assertIn("sonarremedy", result.stderr.lower())
+
     def test_help_documents_actual_commands(self):
         result = subprocess.run(
             [sys.executable, "-B", str(PACK / "debt_work.py"), "--help"],

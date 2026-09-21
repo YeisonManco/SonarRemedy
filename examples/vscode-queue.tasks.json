@@ -4,20 +4,19 @@
     {
       "label": "Debt queue: preview manual runner",
       "type": "process",
-      "command": "python",
-      "args": ["-B", "${input:pack}/debt_work.py", "--state", "${input:queue}", "run", "--provider", "manual"],
+      "command": "sonarremedy",
+      "args": ["run", "--state", "${input:queue}"],
       "problemMatcher": []
     },
     {
-      "label": "Debt queue: read-only monitor",
+      "label": "Debt queue: read-only status",
       "type": "process",
-      "command": "python",
-      "args": ["-B", "${input:pack}/debt_work.py", "--state", "${input:queue}", "monitor"],
+      "command": "sonarremedy",
+      "args": ["status", "--state", "${input:queue}"],
       "problemMatcher": []
     }
   ],
   "inputs": [
-    {"id": "pack", "type": "promptString", "description": "Approved Agentes pack path", "default": "C:/work/Agentes"},
     {"id": "queue", "type": "promptString", "description": "Existing queue directory outside the target", "default": "C:/queue-state/run-001"}
   ]
 }
