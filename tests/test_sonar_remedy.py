@@ -645,6 +645,140 @@ class StatusCommandTests(unittest.TestCase):
         self.assertNotIn('"Blocked"', buf.getvalue())
 
 
+class DocumentCommandTests(unittest.TestCase):
+    """Port of debt_work.py's `document --execute`: the only entrypoint (now here,
+    via debt_queue.Queue.document(), unchanged) for the full audit-trail
+    progress.json/report.json export, including per-job/entry/attempt detail and
+    the typesafe_hotspot_risk advisory field."""
+
+    REVISION = "d" * 40
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.base = os.path.realpath(self.tmp.name)
+        self.repo = os.path.join(self.base, "target")
+        os.makedirs(self.repo)
+        with open(os.path.join(self.repo, "a.cs"), "w", encoding="utf-8") as fh:
+            fh.write("class A { int Value() => 1; }\n")
+        self.state = os.path.join(self.base, "queue")
+        self.export = os.path.join(self.base, "export.json")
+        with open(self.export, "w", encoding="utf-8") as fh:
+            json.dump(
+                {
+                    "version": 1,
+                    "revision": self.REVISION,
+                    "issues": [
+                        {
+                            "id": "S1",
+                            "path": "a.cs",
+                            "kind": "smells",
+                            "line": 1,
+                            "rule": "csharp:S1",
+                        }
+                    ],
+                },
+                fh,
+            )
+
+    def _identity(self, root):
+        return {"root": str(root), "branch": "main", "revision": self.REVISION}
+
+    def _run(self, argv):
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            code = sonar_remedy.main(argv)
+        return code, buf.getvalue()
+
+    def test_document_dry_run_default(self):
+        import debt_queue
+
+        fake_work = mock.MagicMock()
+        fake_work.document.return_value = {"status": "dry-run", "action": "document"}
+        with mock.patch.object(debt_queue, "Queue", return_value=fake_work) as qpatched:
+            code, out = self._run(["document", "--state", "C:/q"])
+        self.assertEqual(code, 0)
+        self.assertEqual(qpatched.call_args.args[0], "C:/q")
+        self.assertIs(fake_work.document.call_args.kwargs.get("execute"), False)
+        self.assertIn('"dry-run"', out)
+
+    def test_document_execute_flag(self):
+        import debt_queue
+
+        fake_work = mock.MagicMock()
+        fake_work.document.return_value = {"status": "documented", "files": {}}
+        with mock.patch.object(debt_queue, "Queue", return_value=fake_work):
+            code, out = self._run(["document", "--state", "C:/q", "--execute"])
+        self.assertEqual(code, 0)
+        self.assertIs(fake_work.document.call_args.kwargs.get("execute"), True)
+        self.assertIn('"documented"', out)
+
+    def test_document_invalid_state_reports_real_reason(self):
+        import debt_queue
+
+        with mock.patch.object(
+            debt_queue, "Queue", side_effect=debt_queue.Blocked("state_must_be_outside_target")
+        ):
+            code, out = self._run(["document", "--state", "C:/q"])
+        self.assertEqual(code, 2)
+        self.assertIn("state_must_be_outside_target", out)
+        self.assertNotIn('"Blocked"', out)
+
+    def test_document_execute_writes_full_audit_trail_equivalent_to_debt_work(self):
+        # Real queue, real Queue.document() call through the new CLI (no mocking
+        # of debt_queue.Queue) — proves the CLI wiring reaches the exact same
+        # engine method debt_work.py's `document --execute` was the only way to
+        # reach, and that report.json/progress.json land on disk with the full
+        # per-job/entry/attempt shape (README.md's documented contract).
+        import debt_queue
+
+        with mock.patch.object(debt_queue, "git_identity", side_effect=self._identity):
+            create = debt_queue.slice_queue(
+                self.repo, self.export, self.state, "main", execute=True
+            )
+            self.assertEqual(create["status"], "created")
+            code, out = self._run(["document", "--state", self.state, "--execute"])
+        self.assertEqual(code, 0)
+        result = json.loads(out)
+        self.assertEqual(result["status"], "documented")
+        self.assertEqual(set(result["files"]), {"progress.json", "report.json"})
+
+        progress_path = os.path.join(self.state, "progress.json")
+        report_path = os.path.join(self.state, "report.json")
+        self.assertTrue(os.path.isfile(progress_path))
+        self.assertTrue(os.path.isfile(report_path))
+
+        with open(report_path, encoding="utf-8") as fh:
+            report = json.load(fh)
+        self.assertEqual(report["version"], 1)
+        self.assertIn("binding", report)
+        self.assertIn("progress", report)
+        self.assertEqual(len(report["jobs"]), 1)
+        self.assertEqual(report["jobs"][0]["path"], "a.cs")
+        self.assertEqual(len(report["entries"]), 1)
+        self.assertEqual(report["entries"][0]["job_id"], report["jobs"][0]["job_id"])
+        self.assertEqual(report["attempts"], [])
+        self.assertIn("notice", report)
+
+        with open(progress_path, encoding="utf-8") as fh:
+            progress = json.load(fh)
+        self.assertIn("entry_states", progress)
+
+    def test_document_dry_run_writes_no_files(self):
+        import debt_queue
+
+        with mock.patch.object(debt_queue, "git_identity", side_effect=self._identity):
+            create = debt_queue.slice_queue(
+                self.repo, self.export, self.state, "main", execute=True
+            )
+            self.assertEqual(create["status"], "created")
+            code, out = self._run(["document", "--state", self.state])
+        self.assertEqual(code, 0)
+        self.assertEqual(json.loads(out), {"status": "dry-run", "action": "document"})
+        self.assertFalse(os.path.isfile(os.path.join(self.state, "report.json")))
+        self.assertFalse(os.path.isfile(os.path.join(self.state, "progress.json")))
+
+
 class AnalyzeCommandTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()

@@ -276,6 +276,18 @@ TOOLS = [
             "required": ["state"],
         },
     },
+    {
+        "name": "sonar_remedy_document",
+        "description": "Regenerate the deterministic audit-trail progress.json + report.json (every job, entry and attempt, including the typesafe_hotspot_risk advisory field when present). Default is dry-run; execute=true writes the files into the queue's state directory.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "state": {"type": "string"},
+                "execute": {"type": "boolean"},
+            },
+            "required": ["state"],
+        },
+    },
 ]
 
 
@@ -421,6 +433,8 @@ def build_argv(name: str, arguments: dict[str, Any] | None) -> list[str]:
         return argv
     if name == "sonar_remedy_report":
         return g + ["report", "--state", a["state"]]
+    if name == "sonar_remedy_document":
+        return g + ["document", "--state", a["state"]] + (["--execute"] if a.get("execute") else [])
     raise ValueError(f"unknown tool: {name}")
 
 

@@ -1501,6 +1501,13 @@ def main(argv: list[str] | None = None) -> int:
         "report", help="list applied fixes and the human follow-up each requires"
     )
     report_cmd.add_argument("--state", required=True, help="the queue directory created by slice")
+    document_cmd = commands.add_parser(
+        "document", help="regenerate deterministic progress.json and report.json"
+    )
+    document_cmd.add_argument("--state", required=True, help="the queue directory created by slice")
+    document_cmd.add_argument(
+        "--execute", action="store_true", help="write progress.json/report.json (default: dry-run)"
+    )
     args = parser.parse_args(argv)
     try:
         if args.command == "projects":
@@ -1564,6 +1571,13 @@ def main(argv: list[str] | None = None) -> int:
 
             work = debt_queue.Queue(args.state)
             print(json.dumps(work.report(), sort_keys=True))
+            return 0
+        if args.command == "document":
+            import debt_queue
+
+            work = debt_queue.Queue(args.state)
+            result = work.document(execute=args.execute)
+            print(json.dumps(result, sort_keys=True))
             return 0
         if args.command == "configure-project":
             branch = args.main_branch or rc.detect_branch(args.sonar_url) or "main"
