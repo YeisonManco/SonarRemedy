@@ -229,6 +229,10 @@ Integration runs **only** the check commands you explicitly bind — nothing els
 
 Don't hand-write it from scratch: `sonarremedy detect-checks --repo <path>` drafts it from the repo (solution, test projects, `dotnet` + real sha256) and tells you the 1–2 judgments to complete (same flow as `sonar_remedy_detect_checks`).
 
+### Optional: TypeSafe pre-check
+
+Set `TYPESAFE_API_KEY` and `integrate()` asks TypeSafe's System One a cheap yes/no question — does this proposal's diff plausibly address the Sonar rule it targets? — right before the expensive baseline build runs, and records the answer as evidence (`typesafe-precheck.json` in the job's `integration` folder). It is **opt-in and purely advisory**: with no key set (the default), nothing about `integrate()` changes at all, and even a network failure or a malformed response never blocks, gates, or alters integration — the worst case is an `error` status recorded instead of a score.
+
 ## Commit gate (pre-push hook)
 
 `init` installs a pre-push hook into the project's `.git/hooks`, so broken code cannot be pushed: the hook runs the project's gates and blocks the push on red. Never use `--no-verify`.

@@ -153,6 +153,80 @@ class ExecutorTests(QueueFixture):
         self.assertEqual(len(self.calls), 8)
         self.assertEqual(before, self.files())
 
+    def _precheck_evidence(self):
+        matches = list(Path(self.state).rglob("typesafe-precheck.json"))
+        self.assertEqual(len(matches), 1)
+        return q.parse_json(q.read_bytes(matches[0], q.MAX_EXPORT))
+
+    def test_typesafe_precheck_unavailable_when_key_unset_leaves_outcome_unchanged(self):
+        os.environ.pop("TYPESAFE_API_KEY", None)
+        self.configure()
+        job = self.proposed()
+        outcome = e.integrate(
+            self.queue(), job, execute=True, control_root=self.control, process_runner=self.runner
+        )
+        self.assertEqual(outcome["status"], "locally_verified")
+        self.assertEqual(len(self.calls), 8)
+        self.assertIn("=> 3", (self.target / "a.cs").read_text())
+        self.assertEqual(
+            self._precheck_evidence(),
+            {"status": "unavailable", "reason": "TYPESAFE_API_KEY not set"},
+        )
+
+    def test_typesafe_precheck_success_leaves_outcome_unchanged(self):
+        import json
+        from unittest import mock
+
+        from test_typesafe_client import FakeOpener, FakeResponse
+
+        self.configure()
+        job = self.proposed()
+        body = json.dumps({"answers": {"addresses_issue": {"type": "noul", "noul": 0.9}}}).encode()
+        fake = FakeOpener(response=FakeResponse(body))
+        with (
+            mock.patch.dict(os.environ, {"TYPESAFE_API_KEY": "secret-token"}),
+            mock.patch("typesafe_client._opener", return_value=fake),
+        ):
+            outcome = e.integrate(
+                self.queue(),
+                job,
+                execute=True,
+                control_root=self.control,
+                process_runner=self.runner,
+            )
+        self.assertEqual(outcome["status"], "locally_verified")
+        self.assertEqual(len(self.calls), 8)
+        self.assertIn("=> 3", (self.target / "a.cs").read_text())
+        evidence = self._precheck_evidence()
+        self.assertEqual(evidence["status"], "ok")
+        self.assertEqual(evidence["noul"], 0.9)
+        self.assertEqual(len(fake.calls), 1)
+
+    def test_typesafe_precheck_network_failure_leaves_outcome_unchanged(self):
+        from unittest import mock
+        from urllib.error import URLError
+
+        from test_typesafe_client import FakeOpener
+
+        self.configure()
+        job = self.proposed()
+        fake = FakeOpener(error=URLError("no route to host"))
+        with (
+            mock.patch.dict(os.environ, {"TYPESAFE_API_KEY": "secret-token"}),
+            mock.patch("typesafe_client._opener", return_value=fake),
+        ):
+            outcome = e.integrate(
+                self.queue(),
+                job,
+                execute=True,
+                control_root=self.control,
+                process_runner=self.runner,
+            )
+        self.assertEqual(outcome["status"], "locally_verified")
+        self.assertEqual(len(self.calls), 8)
+        self.assertIn("=> 3", (self.target / "a.cs").read_text())
+        self.assertEqual(self._precheck_evidence()["status"], "error")
+
     def test_report_surfaces_follow_up(self):
         self.configure()
         job = self.proposed(

@@ -28,6 +28,7 @@ py-modules = [
     "debt_work", "debt_queue", "debt_executor", "debt_runner", "debt_transport", "debtpack",
     "sonar_client", "sonar_fetch", "sonar_local", "sonar_exclusions", "sonar_gateway",
     "sonar_suppressions", "sonar_exclusions_report", "sonar_hooks", "context_resolver",
+    "typesafe_client",
 ]
 
 [tool.ruff]

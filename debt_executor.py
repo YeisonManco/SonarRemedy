@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any
 
 import debt_queue as q
+import typesafe_client
 from debt_transport import run_process
 
 CONTROL_ROOT = Path(__file__).resolve().parent / ".debt-control"
@@ -633,6 +634,30 @@ def integrate(
                 "write_paths": sorted(originals),
             }
             q.write_immutable(integration / "intent.json", q.encoded(intent))
+            # Advisory-only: never gates, blocks or changes integrate's outcome.
+            # precheck_proposal never raises, so no try/except is needed here.
+            issues = context.get("issues") if isinstance(context.get("issues"), list) else []
+            rules = sorted(
+                {
+                    issue.get("rule")
+                    for issue in issues
+                    if isinstance(issue, dict) and isinstance(issue.get("rule"), str)
+                }
+            )
+            typesafe_edits = [
+                {"old": replacement.get("old", ""), "new": replacement.get("new", "")}
+                for edit in proposal.get("edits", [])
+                if isinstance(edit, dict)
+                for replacement in edit.get("replacements", [])
+                if isinstance(replacement, dict)
+            ]
+            precheck = typesafe_client.precheck_proposal(
+                ",".join(rules) or "unknown",
+                context.get("kind", "unknown"),
+                ",".join(intent["write_paths"]) or "unknown",
+                typesafe_edits,
+            )
+            q.write_immutable(integration / "typesafe-precheck.json", q.encoded(precheck))
             barrier.activate(
                 {
                     "job_id": job_id,
