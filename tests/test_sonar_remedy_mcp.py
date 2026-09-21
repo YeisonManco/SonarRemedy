@@ -29,6 +29,8 @@ COMMANDS = [
     "rules",
     "report",
     "document",
+    "defer",
+    "reconcile",
     "doctor",
 ]
 
@@ -165,6 +167,49 @@ class ToolRegistryTests(unittest.TestCase):
         self.assertEqual(
             mcp.build_argv("sonar_remedy_document", {"state": "C:/q", "execute": True}),
             ["document", "--state", "C:/q", "--execute"],
+        )
+
+    def test_build_argv_defer(self):
+        self.assertEqual(
+            mcp.build_argv("sonar_remedy_defer", {"state": "C:/q", "job": "j1", "reason": "r1"}),
+            ["defer", "--state", "C:/q", "--job", "j1", "--reason", "r1"],
+        )
+        self.assertEqual(
+            mcp.build_argv(
+                "sonar_remedy_defer",
+                {"state": "C:/q", "job": "j1", "reason": "r1", "execute": True},
+            ),
+            ["defer", "--state", "C:/q", "--job", "j1", "--reason", "r1", "--execute"],
+        )
+
+    def test_build_argv_reconcile(self):
+        self.assertEqual(
+            mcp.build_argv(
+                "sonar_remedy_reconcile",
+                {"state": "C:/q", "receipt": "C:/receipt.json", "effects": "none"},
+            ),
+            ["reconcile", "--state", "C:/q", "--receipt", "C:/receipt.json", "--effects", "none"],
+        )
+        self.assertEqual(
+            mcp.build_argv(
+                "sonar_remedy_reconcile",
+                {
+                    "state": "C:/q",
+                    "receipt": "C:/receipt.json",
+                    "effects": "unknown",
+                    "execute": True,
+                },
+            ),
+            [
+                "reconcile",
+                "--state",
+                "C:/q",
+                "--receipt",
+                "C:/receipt.json",
+                "--effects",
+                "unknown",
+                "--execute",
+            ],
         )
 
     def test_build_argv_doctor(self):

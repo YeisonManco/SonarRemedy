@@ -1,22 +1,24 @@
 # Manual proposals, serial integration, honest evidence
 
-> **Deprecated — scheduled for removal, bypasses `sonar_remedy.py` safety.**
-> This is the canonical `debt_work.py` command/schema reference — the raw
-> interface to the same queue engine (`debt_queue.py`/`debt_executor.py`)
+> **`debt_work.py`'s direct CLI has been removed.** This document is the
+> canonical reference for the queue engine (`debt_queue.py`/`debt_executor.py`)
 > that `sonar_remedy.py` wraps with project auto-detection, `doctor`, and
-> queue↔project registration. `debt_work.py`'s direct CLI is deprecated and
-> will be removed in a future release; use `sonarremedy` (via `README.md` and
-> `host-agents/sonar-remedy-orchestrator.md`) instead, which drives this same
-> engine through that safety layer. This document remains supported during
-> the deprecation window for advanced/manual use, and its `proposal` contract
-> below is shared by both interfaces (`sonar_remedy.py` drives the identical
-> `debt_queue.py` validator).
+> queue↔project registration. `sonarremedy` (via `README.md` and
+> `host-agents/sonar-remedy-orchestrator.md`) is the only supported CLI onto
+> this engine now; its `defer`/`reconcile`/`document`/`configure`/`integrate`/
+> `run` commands map directly to the `debt_queue.Queue` methods of the same
+> name described below. The lower-level `next`/`claim`/`complete`/`monitor`
+> primitives have no standalone CLI (they remain Python-only, driven
+> internally by `sonarremedy run`/`status`/`progress`) — this document keeps
+> describing them as the engine's Python API for advanced/manual use. The
+> `proposal` contract below is shared by every caller of this engine
+> (`sonar_remedy.py` drives the identical `debt_queue.py` validator).
 
-`debt_work.py` retains every supplied issue ordinal in SQLite, groups work by exact path and kind, leases immutable bounded contexts, and records proposals. Default commands do not edit the target. Explicitly configured `integrate --execute` or `run --integrate --execute` can apply existing-file replacements and run serial local checks. No command launches a native model provider, commits, scans or confirms a Sonar finding. Manual JSON proposals work without any model runtime.
+The queue engine retains every supplied issue ordinal in SQLite, groups work by exact path and kind, leases immutable bounded contexts, and records proposals. Default operations do not edit the target. Explicitly configured `sonarremedy integrate --execute` or `sonarremedy run --integrate --execute` can apply existing-file replacements and run serial local checks. Nothing launches a native model provider, commits, scans or confirms a Sonar finding. Manual JSON proposals work without any model runtime.
 
 ## Quick path
 
-Use an existing, explicitly selected Windows worktree and a sanitized version-1 export whose revision equals that worktree's HEAD. These are examples, not authorization to operate on any real target. `$Q` must be a **new** directory outside `$Target`, with an existing parent. No credentials are needed.
+Use an existing, explicitly selected Windows worktree and a sanitized version-1 export whose revision equals that worktree's HEAD. These are examples, not authorization to operate on any real target. The queue's `--state` directory must be a **new** directory outside the target, with an existing parent. No credentials are needed.
 
 ```powershell
 $Target = 'C:\work\approved-worktree'
@@ -24,39 +26,40 @@ $Q = 'C:\queue-state\run-001'
 $Export = 'C:\queue-state\export.json'
 
 # Default is read-only preview: no Git subprocess, state, logs, or provider.
-python -B debt_work.py --state $Q slice --target $Target --branch feature/debt --export $Export
+sonarremedy slice --state $Q --target $Target --branch feature/debt --export $Export
 
 # Explicit opt-in creates queue-local files and reads Git identity; no Git mutation.
-python -B debt_work.py --state $Q slice --target $Target --branch feature/debt --export $Export --execute
-python -B debt_work.py --state $Q next --limit 4
-python -B debt_work.py --state $Q claim --execute
+sonarremedy slice --state $Q --target $Target --branch feature/debt --export $Export --execute
 
-# A human or later restricted adapter supplies a proposal, bound to the claim.
-# This command records structured edits; it does NOT apply them.
-python -B debt_work.py --state $Q complete --proposal C:\queue-state\proposal.json --execute
-python -B debt_work.py --state $Q monitor
-python -B debt_work.py --state $Q document --execute
+# `next`/`claim`/`complete` have no standalone CLI: `sonarremedy run` drives
+# them internally per batch. A human or restricted adapter supplies each
+# proposal, bound to the batch's claim; proposals record structured edits,
+# they do NOT apply them.
+sonarremedy run --state $Q --provider manual --execute
+
+sonarremedy status --state $Q
+sonarremedy document --state $Q --execute
 ```
 
-Exit `0` means the requested operation completed, including explicit dry-run/deferred/no-eligible results; it never means Sonar debt was reduced. Exit `2` covers blocked, unavailable, quarantined or reconciliation-required outcomes. Every mutation defaults to dry-run. `next` and `monitor` always use SQLite read-only mode and spawn no processes. Only explicit integration commands authorize target effects using separately bound checks; no flag authorizes remote work.
+Exit `0` means the requested operation completed, including explicit dry-run/deferred/no-eligible results; it never means Sonar debt was reduced. Exit `2` covers blocked, unavailable, quarantined or reconciliation-required outcomes. Every mutation defaults to dry-run. Read-only queries always use SQLite read-only mode and spawn no processes. Only explicit integration commands authorize target effects using separately bound checks; no flag authorizes remote work.
 
 ## Commands and stable core API
 
-Run `python -B debt_work.py --help` or `<command> --help`. `--state` precedes the subcommand. Optional global `--expect-target` and `--expect-branch` assert the binding when opening an existing queue.
+`sonarremedy <command> --help` documents every CLI-exposed command's flags; `--state` precedes the queue directory argument on each. The table below documents the underlying `debt_queue.Queue` Python API in full — the "CLI" column shows which primitives `sonarremedy` exposes directly and which remain internal.
 
-| Command | Behavior |
-|---|---|
-| `slice --target PATH --export PATH --branch NAME [--write-sets FILE]` | Preview/create the entire intake, never the first eight only. CLI output contains counts, not all issues. |
-| `next [--limit 1..8]` | Read the next eligible stage, counting distinct files and excluding intersecting full write sets. Default 4. |
-| `claim [--job ID] [--lease-seconds 1..1200]` | Transactionally claim one eligible job and materialize its attempt context. Returns identity/lease/fingerprint, expiry, and `context_path`; launches nothing. |
-| `complete --proposal FILE` | Validate an exact bound proposal and record an immutable script envelope. Only `proposed`, `deferred`, or `failed` are accepted. |
-| `defer --job ID --reason CODE` | Defer pending/proposed work. A leased job instead needs its exact completion/reconciliation identity. |
-| `reconcile --receipt FILE --effects none\|unknown` | Resolve an expired lease using saved claim JSON. Never requeue automatically. |
-| `monitor` | Return compact counts by job/entry state and kind, supplied-data coverage, quarantine/gap indicators, and unavailable statistics as `null`. |
-| `document` | Regenerate deterministic `progress.json` and `report.json`, including every ordinal and attempt evidence locator; requires `--execute` to write. |
-| `configure --checks FILE [--approve-checks-sha256 HASH]` | Preview the canonical config digest; with matching reviewed digest and `--execute`, bind exact checks/executable hashes and the current target source snapshot. No checks run during configuration. |
-| `integrate --job ID` | With `--execute`, serially apply one recorded proposal and run the bound baseline/RED/GREEN/post-check contract. |
-| `run [--provider manual] [--resume] [--integrate] [--limit N] [--max-batches N] [--wall-seconds N] [--inbox PATH]` | With `--execute`, claim/process bounded manual-file batches; explicit `--integrate` also requests target effects. Native providers return unavailable before dispatch. |
+| Queue method | CLI | Behavior |
+|---|---|---|
+| `slice_queue(target, export, state, branch, *, write_sets=None)` | `sonarremedy slice` | Preview/create the entire intake, never the first eight only. Output contains counts, not all issues. |
+| `next(limit=1..8)` | *(internal only, driven by `sonarremedy run`)* | Read the next eligible stage, counting distinct files and excluding intersecting full write sets. Default 4. |
+| `claim(job_id=None, lease_seconds=1..1200)` | *(internal only, driven by `sonarremedy run`)* | Transactionally claim one eligible job and materialize its attempt context. Returns identity/lease/fingerprint, expiry, and `context_path`; launches nothing. |
+| `complete(proposal)` | *(internal only, driven by `sonarremedy run`)* | Validate an exact bound proposal and record an immutable script envelope. Only `proposed`, `deferred`, or `failed` are accepted. |
+| `defer(job_id, reason)` | `sonarremedy defer --job ID --reason CODE` | Defer pending/proposed work. A leased job instead needs its exact completion/reconciliation identity. |
+| `reconcile(receipt, effects=none\|unknown)` | `sonarremedy reconcile --receipt FILE --effects none\|unknown` | Resolve an expired lease using saved claim JSON. Never requeue automatically. |
+| `monitor()` | `sonarremedy status` / `sonarremedy progress` | Return compact counts by job/entry state and kind, supplied-data coverage, quarantine/gap indicators, and unavailable statistics as `null`. |
+| `document()` | `sonarremedy document` | Regenerate deterministic `progress.json` and `report.json`, including every ordinal and attempt evidence locator; requires `--execute` to write. |
+| `debt_executor.configure(work, config, approved_sha256=...)` | `sonarremedy configure --checks FILE [--approve-checks-sha256 HASH]` | Preview the canonical config digest; with matching reviewed digest and `--execute`, bind exact checks/executable hashes and the current target source snapshot. No checks run during configuration. |
+| `debt_executor.integrate(work, job_id)` | `sonarremedy integrate --job ID` | With `--execute`, serially apply one recorded proposal and run the bound baseline/RED/GREEN/post-check contract. |
+| `debt_runner.run(work, provider="manual", ...)` | `sonarremedy run [--resume] [--integrate] [--limit N] [--max-batches N] [--wall-seconds N] [--inbox PATH]` | With `--execute`, claim/process bounded manual-file batches; explicit `--integrate` also requests target effects. Native providers return unavailable before dispatch. |
 
 Python entrypoints in `debt_queue.py`:
 
@@ -64,7 +67,7 @@ Python entrypoints in `debt_queue.py`:
 - `slice_queue(target, export, state, branch, *, execute=False, write_sets=None, identity_reader=None)` creates the bound database only with opt-in.
 - `Queue(state, *, target=None, branch=None, identity_reader=None)` exposes `next`, `claim`, `complete`, `defer`, `reconcile`, `monitor`, and `document` as above. Mutation methods have `execute=False`; lease methods also accept a test-injected `now`.
 - `identity_reader(root)` returns exactly `{root, branch, revision}`. Production defaults to bounded, read-only Git commands after an existing `.git` marker is confirmed. Tests inject identity without initializing Git. There is **no CLI switch** bypassing Git identity.
-- `Blocked` denotes an unsafe/incomplete operation. Callers must also handle I/O failures. The CLI emits sanitized blocked outcomes rather than raw source or exception bodies.
+- `Blocked` denotes an unsafe/incomplete operation. Callers must also handle I/O failures. `sonarremedy` emits sanitized blocked outcomes rather than raw source or exception bodies.
 - `debt_executor.configure(work, config, approved_sha256=..., execute=False)` and `integrate(work, job_id, execute=False)` bind and execute owner-reviewed checks. `debt_runner.run(...)` handles manual batch/resume boundaries. Internal identity/process/factory/control-root callbacks exist only for trusted isolated tests; no CLI callback, arbitrary provider argv or permission-verification boolean is exposed.
 
 The binding includes canonical root, branch, revision, export SHA-256 and entry count. Each job includes complete `issues[]` with ordinals, an approved full write set, and baseline source hashes. Each attempt adds an ID, lease, context fingerprint and retained context SHA-256. Hashes are integrity references, not authenticated proof.
@@ -96,15 +99,15 @@ Review [the deliberately incomplete check example](../examples/debt-checks.examp
 Each TRX check must produce one complete report for its explicitly declared scope. Do not use a shared `LogFileName` over multiple projects/frameworks and accept the last overwritten file. The example deliberately selects one test project/framework; replace those values, do not assume them. Configure every mandatory suite explicitly. Current red-first integration supports one exact TRX check; multi-report RED aggregation/Microsoft.Testing.Platform support remains unavailable, so defer if mandatory checks cannot fit this contract. Characterization can use multiple separately configured TRX checks. See the official [.NET test-runner migration documentation](https://learn.microsoft.com/dotnet/core/testing/migrating-vstest-microsoft-testing-platform).
 
 ```powershell
-python -B debt_work.py --state $Q configure --checks $Checks
+sonarremedy configure --state $Q --checks $Checks
 # Review the complete file and the canonical checks_sha256 printed above.
-python -B debt_work.py --state $Q configure --checks $Checks --approve-checks-sha256 '<reviewed digest>' --execute
-python -B debt_work.py --state $Q run --provider manual --execute
+sonarremedy configure --state $Q --checks $Checks --approve-checks-sha256 '<reviewed digest>' --execute
+sonarremedy run --state $Q --provider manual --execute
 # Supply strict JSON at each returned proposal_path, using that attempt's job.json.
-python -B debt_work.py --state $Q run --provider manual --resume --integrate --execute
+sonarremedy run --state $Q --provider manual --resume --integrate --execute
 ```
 
-The approval digest hashes canonical JSON (the preview prints it), not arbitrary file whitespace. Do not blindly copy a model-proposed configuration/digest: these checks execute trusted repository code with local filesystem/network capabilities. Configuration is immutable for that queue; changed approval/snapshot needs a new reviewed run rather than silent rebinding. The PowerShell facade uses `-Provider`, `-Execute`, `-Integrate`, `-Resume`, `-Limit`, `-MaxBatches` and `-WallSeconds`; defaults launch no child process or filesystem writes. `-Resume` never resumes a model conversation.
+The approval digest hashes canonical JSON (the preview prints it), not arbitrary file whitespace. Do not blindly copy a model-proposed configuration/digest: these checks execute trusted repository code with local filesystem/network capabilities. Configuration is immutable for that queue; changed approval/snapshot needs a new reviewed run rather than silent rebinding. `-Resume` never resumes a model conversation.
 
 Manual mode leases at most the selected batch, returns context/response locators and pauses immediately for missing responses. Place each response at `<inbox>/<attempt-id>.json` (default `<queue>/inbox`). Resume consumes the bound response once. Malformed/partial/wrong-identity/oversized results become explicit script-recorded failures without target edits; expired attempts require reconciliation, not resubmission. All deferred work reaches quiescence, not a false global-clean verdict. Native model automation remains unavailable; no permissive fallback is used.
 
@@ -120,7 +123,7 @@ Configured checks run in suspended Windows processes assigned to kill-on-close J
 
 | Situation | Safe behavior |
 |---|---|
-| Expired lease | Still occupies its write set until explicit reconciliation. `effects=none` defers; `effects=unknown` fails and quarantines the queue. Neither retries. |
+| Expired lease | Still occupies its write set until explicit reconciliation via `sonarremedy reconcile --receipt FILE --effects none\|unknown`. `effects=none` defers; `effects=unknown` fails and quarantines the queue. Neither retries. |
 | Result published, database commit interrupted | Gap is reported. Explicitly resubmit the **identical** proposal while its lease remains valid; no overwrite or replayed target effects. |
 | Different immutable result, missing/corrupt context/result | Block; preserve evidence. Never overwrite or infer success. |
 | Incomplete slice or orphan claim folder | Explicit blocking requiring manual review. Use a separately approved fresh queue if appropriate; no guessed cleanup/reset. |
@@ -142,7 +145,8 @@ Runner defaults: 4 files/batch (max 8), 10 batches (max 1,000), 3,600 seconds (m
 ```powershell
 python -B -m unittest discover -s tests -p "test_debt_queue.py" -v
 python -B -m unittest discover -s tests -p "test_debt_queue_cli.py" -v
+python -B -m unittest discover -s tests -p "test_sonar_remedy.py" -v
 python -B -m unittest discover -s tests -v
 ```
 
-Fixtures cover full ordinal retention, same-write-set exclusion, real local process claim races, contexts/hashes, expiry, publication/commit gaps, corruption, read-only behavior, deterministic reports and the CLI. Identity is stubbed only inside tests. This is not authenticated provider, business-target .NET, or live Sonar evidence.
+Fixtures cover full ordinal retention, same-write-set exclusion, real local process claim races, contexts/hashes, expiry, publication/commit gaps, corruption, read-only behavior, deterministic reports, and the `sonarremedy` CLI (`tests/test_sonar_remedy.py`, including `document`/`defer`/`reconcile`). Identity is stubbed only inside tests. This is not authenticated provider, business-target .NET, or live Sonar evidence.

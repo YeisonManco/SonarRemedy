@@ -113,6 +113,8 @@ what the mechanical tools cannot: understanding the code and writing an idiomati
 | `rules` | Manage the exclusion whitelist/blacklist (`list`/`allow`/`block`/`remove`) |
 | `report` | List applied fixes + the human follow-up each requires |
 | `document` | Regenerate the deterministic audit-trail `progress.json` + `report.json` |
+| `defer` | Defer pending/proposed work without changing target files |
+| `reconcile` | Resolve an expired lease, never automatically retrying |
 | `status` | Report the queue's next action + ETA |
 | `progress` | Write a human-readable progress file |
 | `schedule` | Show the parallel/serial plan for pending jobs |

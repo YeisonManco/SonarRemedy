@@ -1508,6 +1508,28 @@ def main(argv: list[str] | None = None) -> int:
     document_cmd.add_argument(
         "--execute", action="store_true", help="write progress.json/report.json (default: dry-run)"
     )
+    defer_cmd = commands.add_parser(
+        "defer", help="defer pending/proposed work without changing target files"
+    )
+    defer_cmd.add_argument("--state", required=True, help="the queue directory created by slice")
+    defer_cmd.add_argument("--job", required=True)
+    defer_cmd.add_argument("--reason", required=True, help="short non-secret reason code")
+    defer_cmd.add_argument(
+        "--execute", action="store_true", help="explicitly defer the job (default: dry-run)"
+    )
+    reconcile_cmd = commands.add_parser(
+        "reconcile", help="resolve an expired lease, never automatically retry"
+    )
+    reconcile_cmd.add_argument(
+        "--state", required=True, help="the queue directory created by slice"
+    )
+    reconcile_cmd.add_argument(
+        "--receipt", required=True, help="saved claim JSON containing exact lease identity"
+    )
+    reconcile_cmd.add_argument("--effects", required=True, choices=["none", "unknown"])
+    reconcile_cmd.add_argument(
+        "--execute", action="store_true", help="explicitly reconcile the lease (default: dry-run)"
+    )
     args = parser.parse_args(argv)
     try:
         if args.command == "projects":
@@ -1577,6 +1599,25 @@ def main(argv: list[str] | None = None) -> int:
 
             work = debt_queue.Queue(args.state)
             result = work.document(execute=args.execute)
+            print(json.dumps(result, sort_keys=True))
+            return 0
+        if args.command == "defer":
+            import debt_queue
+
+            work = debt_queue.Queue(args.state)
+            result = work.defer(args.job, args.reason, execute=args.execute)
+            print(json.dumps(result, sort_keys=True))
+            return 0
+        if args.command == "reconcile":
+            import debt_queue
+
+            work = debt_queue.Queue(args.state)
+            receipt = (
+                debt_queue.parse_json(debt_queue.read_bytes(args.receipt, debt_queue.MAX_CONTEXT))
+                if args.execute
+                else None
+            )
+            result = work.reconcile(receipt, effects=args.effects, execute=args.execute)
             print(json.dumps(result, sort_keys=True))
             return 0
         if args.command == "configure-project":

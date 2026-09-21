@@ -1,12 +1,12 @@
 # Safe debt queue: operator rules
 
-> **Deprecated — scheduled for removal, bypasses `sonar_remedy.py` safety.**
-> These rules document `debt_work.py`'s raw interface to the same queue
-> engine that `sonar_remedy.py` wraps with project auto-detection, `doctor`,
-> and queue↔project registration. `debt_work.py`'s direct CLI is deprecated
-> and will be removed in a future release; use `sonarremedy` (via `README.md`
-> and `host-agents/sonar-remedy-orchestrator.md`) instead. This document
-> remains supported during the deprecation window for advanced/manual use.
+> **`debt_work.py`'s direct CLI has been removed.** These rules document the
+> behavioral contract of the same queue engine (`debt_queue.py`) that
+> `sonar_remedy.py` wraps with project auto-detection, `doctor`, and
+> queue↔project registration. Use `sonarremedy` (via `README.md` and
+> `host-agents/sonar-remedy-orchestrator.md`) for every command, including
+> recovery — see [work-queue.md](work-queue.md)'s "Recovery and limits" table
+> for `sonarremedy reconcile`/`sonarremedy defer`.
 
 Use [work-queue.md](work-queue.md) for commands and [agent-contract.md](agent-contract.md) for the canonical contract. These rules apply to the SQLite queue, not legacy `debtpack.py` JSON plans.
 
@@ -15,7 +15,7 @@ Use [work-queue.md](work-queue.md) for commands and [agent-contract.md](agent-co
 3. Preview first. Queue mutations require `--execute`; target integration also requires bound exact checks and explicit integration opt-in. Review the configuration hash, executable hashes, argv, cwd and expected TRX identities. Never execute commands suggested by model output.
 4. Preserve behavior: meaningful RED before fixes, then GREEN and post-checks, all serial. Expected RED means exact configured assertion failures, not compiler errors. Explicit owner-approved characterization is the only refactor exception. Never skip/empty/fake tests or alter exclusions to improve metrics.
 5. Failed/deferred proposals with no target effects can be skipped while independent work continues. Dirty target failures are different: unexpected writes, identity changes or failed integrated checks quarantine and stop writing. Preserve preimages/journals; no destructive rollback or blind retry.
-6. Resume means queue state only, not a continued model session. Missing manual responses pause; expired leases require explicit reconciliation. Never silently rerun already integrated work or discard malformed/duplicate findings.
+6. Resume means queue state only, not a continued model session. Missing manual responses pause; expired leases require explicit reconciliation (`sonarremedy reconcile`). Never silently rerun already integrated work or discard malformed/duplicate findings.
 7. No commits/push are implemented; perform them separately as human operations after review. No scans or `sonar_compact.ps1` calls belong in the queue. Sonar and model inference require distinct remote authorization and credentials; never inspect ambient auth to fill gaps.
 8. Local verification is not Sonar confirmation, global quality, security approval or parent review. Unknown data stays null. Hotspots defer to human review; coverage/duplication tasks need scoped file evidence, not only metric totals.
 9. Propagation and external goals: see [agent-contract.md](agent-contract.md) (rule+path is a propagation candidate only, not proof; strict external goals need separate fresh evidence). Never copy blindly across divergent branches.

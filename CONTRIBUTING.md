@@ -54,7 +54,7 @@ smoke-tests the three entry points on `windows-latest`.
 | `sonar_remedy_config.py` | config wizard + project store (`~/.sonar-remedy/projects/<name>.json`); secrets in env only |
 | `sonar_remedy.py` | facade CLI — every user-facing subcommand lives here |
 | `sonar_remedy_mcp.py` | MCP server — exposes each subcommand as a tool |
-| `debt_queue.py` / `debt_work.py` | durable SQLite queue (state, binding, claims, leases) |
+| `debt_queue.py` | durable SQLite queue (state, binding, claims, leases) |
 | `debt_executor.py` / `debt_runner.py` / `debt_transport.py` | serial integrator + batch runner + provider transport |
 | `sonar_fetch.py` / `sonar_client.py` / `sonar_local.py` | Sonar API bridge (read), local scan (legacy) |
 | `debtpack.py` | base module: shared constants (e.g. `MAX_ISSUES`), helpers |

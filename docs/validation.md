@@ -1,14 +1,11 @@
 # Accept evidence, never infer success
 
-> **Deprecated — scheduled for removal, bypasses `sonar_remedy.py` safety.**
-> This file documents evidence/validation for `debt_work.py`'s raw interface
-> to the same queue engine that `sonar_remedy.py` wraps with project
-> auto-detection, `doctor`, and queue↔project registration. `debt_work.py`'s
-> direct CLI is deprecated and will be removed in a future release; use
+> **`debt_work.py`'s direct CLI has been removed.** This file documents
+> evidence/validation for the queue engine that `sonar_remedy.py` wraps with
+> project auto-detection, `doctor`, and queue↔project registration.
 > `sonarremedy` (via `README.md` and
-> `host-agents/sonar-remedy-orchestrator.md`) instead. This document remains
-> supported during the deprecation window for advanced/manual use; see
-> [work-queue.md](work-queue.md) for the full `debt_work.py`
+> `host-agents/sonar-remedy-orchestrator.md`) is the only supported CLI onto
+> this engine now; see [work-queue.md](work-queue.md) for the full
 > command/`proposal` contract.
 
 ## Safe queue validation (current workflow)

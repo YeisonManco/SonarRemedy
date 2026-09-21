@@ -779,6 +779,348 @@ class DocumentCommandTests(unittest.TestCase):
         self.assertFalse(os.path.isfile(os.path.join(self.state, "progress.json")))
 
 
+class DeferCommandTests(unittest.TestCase):
+    """Port of debt_work.py's `defer`: the only entrypoint (now here, via
+    debt_queue.Queue.defer(), unchanged) for skipping pending/proposed work
+    without touching target files."""
+
+    REVISION = "e" * 40
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.base = os.path.realpath(self.tmp.name)
+        self.repo = os.path.join(self.base, "target")
+        os.makedirs(self.repo)
+        with open(os.path.join(self.repo, "a.cs"), "w", encoding="utf-8") as fh:
+            fh.write("class A { int Value() => 1; }\n")
+        self.state = os.path.join(self.base, "queue")
+        self.export = os.path.join(self.base, "export.json")
+        with open(self.export, "w", encoding="utf-8") as fh:
+            json.dump(
+                {
+                    "version": 1,
+                    "revision": self.REVISION,
+                    "issues": [
+                        {
+                            "id": "S1",
+                            "path": "a.cs",
+                            "kind": "smells",
+                            "line": 1,
+                            "rule": "csharp:S1",
+                        }
+                    ],
+                },
+                fh,
+            )
+
+    def _identity(self, root):
+        return {"root": str(root), "branch": "main", "revision": self.REVISION}
+
+    def _run(self, argv):
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            code = sonar_remedy.main(argv)
+        return code, buf.getvalue()
+
+    def test_defer_dry_run_default(self):
+        import debt_queue
+
+        fake_work = mock.MagicMock()
+        fake_work.defer.return_value = {"status": "dry-run", "action": "defer"}
+        with mock.patch.object(debt_queue, "Queue", return_value=fake_work) as qpatched:
+            code, out = self._run(["defer", "--state", "C:/q", "--job", "j1", "--reason", "flaky"])
+        self.assertEqual(code, 0)
+        self.assertEqual(qpatched.call_args.args[0], "C:/q")
+        fake_work.defer.assert_called_once_with("j1", "flaky", execute=False)
+        self.assertIn('"dry-run"', out)
+
+    def test_defer_execute_flag(self):
+        import debt_queue
+
+        fake_work = mock.MagicMock()
+        fake_work.defer.return_value = {"status": "deferred", "job_id": "j1", "reason": "flaky"}
+        with mock.patch.object(debt_queue, "Queue", return_value=fake_work):
+            code, out = self._run(
+                ["defer", "--state", "C:/q", "--job", "j1", "--reason", "flaky", "--execute"]
+            )
+        self.assertEqual(code, 0)
+        fake_work.defer.assert_called_once_with("j1", "flaky", execute=True)
+        self.assertIn('"deferred"', out)
+
+    def test_defer_invalid_state_reports_real_reason(self):
+        import debt_queue
+
+        with mock.patch.object(
+            debt_queue, "Queue", side_effect=debt_queue.Blocked("state_must_be_outside_target")
+        ):
+            code, out = self._run(
+                ["defer", "--state", "C:/q", "--job", "j1", "--reason", "flaky", "--execute"]
+            )
+        self.assertEqual(code, 2)
+        self.assertIn("state_must_be_outside_target", out)
+        self.assertNotIn('"Blocked"', out)
+
+    def test_defer_execute_marks_real_pending_job_deferred(self):
+        # Real queue, real Queue.defer() call through the new CLI (no mocking of
+        # debt_queue.Queue) — proves the CLI wiring reaches the exact same engine
+        # method debt_work.py's `defer --execute` was the only way to reach.
+        import debt_queue
+
+        with mock.patch.object(debt_queue, "git_identity", side_effect=self._identity):
+            create = debt_queue.slice_queue(
+                self.repo, self.export, self.state, "main", execute=True
+            )
+            self.assertEqual(create["status"], "created")
+            job_id = debt_queue.Queue(self.state).next()[0]["job_id"]
+            code, out = self._run(
+                [
+                    "defer",
+                    "--state",
+                    self.state,
+                    "--job",
+                    job_id,
+                    "--reason",
+                    "needs_human_review",
+                    "--execute",
+                ]
+            )
+            monitor = debt_queue.Queue(self.state).monitor()
+        self.assertEqual(code, 0)
+        result = json.loads(out)
+        self.assertEqual(
+            result, {"status": "deferred", "job_id": job_id, "reason": "needs_human_review"}
+        )
+        self.assertEqual(monitor["states"]["deferred"], 1)
+        self.assertEqual(monitor["states"]["pending"], 0)
+
+    def test_defer_dry_run_does_not_change_job_status(self):
+        import debt_queue
+
+        with mock.patch.object(debt_queue, "git_identity", side_effect=self._identity):
+            create = debt_queue.slice_queue(
+                self.repo, self.export, self.state, "main", execute=True
+            )
+            self.assertEqual(create["status"], "created")
+            job_id = debt_queue.Queue(self.state).next()[0]["job_id"]
+            code, out = self._run(
+                ["defer", "--state", self.state, "--job", job_id, "--reason", "flaky"]
+            )
+            monitor = debt_queue.Queue(self.state).monitor()
+        self.assertEqual(code, 0)
+        self.assertEqual(json.loads(out), {"status": "dry-run", "action": "defer"})
+        self.assertEqual(monitor["states"]["pending"], 1)
+        self.assertEqual(monitor["states"]["deferred"], 0)
+
+
+class ReconcileCommandTests(unittest.TestCase):
+    """Port of debt_work.py's `reconcile`: the only entrypoint (now here, via
+    debt_queue.Queue.reconcile(), unchanged) for resolving an expired lease."""
+
+    REVISION = "f" * 40
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.base = os.path.realpath(self.tmp.name)
+        self.repo = os.path.join(self.base, "target")
+        os.makedirs(self.repo)
+        with open(os.path.join(self.repo, "a.cs"), "w", encoding="utf-8") as fh:
+            fh.write("class A { int Value() => 1; }\n")
+        self.state = os.path.join(self.base, "queue")
+        self.export = os.path.join(self.base, "export.json")
+        with open(self.export, "w", encoding="utf-8") as fh:
+            json.dump(
+                {
+                    "version": 1,
+                    "revision": self.REVISION,
+                    "issues": [
+                        {
+                            "id": "S1",
+                            "path": "a.cs",
+                            "kind": "smells",
+                            "line": 1,
+                            "rule": "csharp:S1",
+                        }
+                    ],
+                },
+                fh,
+            )
+        self.receipt_path = os.path.join(self.base, "receipt.json")
+
+    def _identity(self, root):
+        return {"root": str(root), "branch": "main", "revision": self.REVISION}
+
+    def _run(self, argv):
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            code = sonar_remedy.main(argv)
+        return code, buf.getvalue()
+
+    def test_reconcile_dry_run_default(self):
+        import debt_queue
+
+        fake_work = mock.MagicMock()
+        fake_work.reconcile.return_value = {"status": "dry-run", "action": "reconcile"}
+        with mock.patch.object(debt_queue, "Queue", return_value=fake_work) as qpatched:
+            code, out = self._run(
+                [
+                    "reconcile",
+                    "--state",
+                    "C:/q",
+                    "--receipt",
+                    self.receipt_path,
+                    "--effects",
+                    "none",
+                ]
+            )
+        self.assertEqual(code, 0)
+        self.assertEqual(qpatched.call_args.args[0], "C:/q")
+        fake_work.reconcile.assert_called_once_with(None, effects="none", execute=False)
+        self.assertIn('"dry-run"', out)
+
+    def test_reconcile_execute_flag_loads_receipt_file(self):
+        import debt_queue
+
+        with open(self.receipt_path, "w", encoding="utf-8") as fh:
+            json.dump(
+                {
+                    "job_id": "j1",
+                    "attempt_id": "a1",
+                    "lease": "lease-token",
+                    "context_fingerprint": "fp",
+                },
+                fh,
+            )
+        fake_work = mock.MagicMock()
+        fake_work.reconcile.return_value = {"status": "deferred", "job_id": "j1"}
+        with mock.patch.object(debt_queue, "Queue", return_value=fake_work):
+            code, out = self._run(
+                [
+                    "reconcile",
+                    "--state",
+                    "C:/q",
+                    "--receipt",
+                    self.receipt_path,
+                    "--effects",
+                    "none",
+                    "--execute",
+                ]
+            )
+        self.assertEqual(code, 0)
+        fake_work.reconcile.assert_called_once_with(
+            {
+                "job_id": "j1",
+                "attempt_id": "a1",
+                "lease": "lease-token",
+                "context_fingerprint": "fp",
+            },
+            effects="none",
+            execute=True,
+        )
+        self.assertIn('"deferred"', out)
+
+    def test_reconcile_invalid_state_reports_real_reason(self):
+        import debt_queue
+
+        with open(self.receipt_path, "w", encoding="utf-8") as fh:
+            json.dump({"job_id": "j1", "attempt_id": "a1"}, fh)
+        with mock.patch.object(
+            debt_queue, "Queue", side_effect=debt_queue.Blocked("state_must_be_outside_target")
+        ):
+            code, out = self._run(
+                [
+                    "reconcile",
+                    "--state",
+                    "C:/q",
+                    "--receipt",
+                    self.receipt_path,
+                    "--effects",
+                    "none",
+                    "--execute",
+                ]
+            )
+        self.assertEqual(code, 2)
+        self.assertIn("state_must_be_outside_target", out)
+        self.assertNotIn('"Blocked"', out)
+
+    def test_reconcile_execute_resolves_real_expired_lease(self):
+        # Real queue, real claim, real expired lease, real Queue.reconcile() call
+        # through the new CLI (no mocking of debt_queue.Queue) — proves the CLI
+        # wiring reaches the exact same engine method debt_work.py's
+        # `reconcile --execute` was the only way to reach. Only the wall clock
+        # observed by the CLI's own (unparameterized, like debt_work.py's) call
+        # is controlled, so a real lease genuinely expires without a real sleep.
+        import debt_queue
+
+        with mock.patch.object(debt_queue, "git_identity", side_effect=self._identity):
+            create = debt_queue.slice_queue(
+                self.repo, self.export, self.state, "main", execute=True
+            )
+            self.assertEqual(create["status"], "created")
+            receipt = debt_queue.Queue(self.state).claim(execute=True, now=100, lease_seconds=1)
+            self.assertEqual(receipt["status"], "leased")
+            with open(self.receipt_path, "w", encoding="utf-8") as fh:
+                json.dump(receipt, fh)
+            with mock.patch.object(debt_queue.time, "time", return_value=200.0):
+                code, out = self._run(
+                    [
+                        "reconcile",
+                        "--state",
+                        self.state,
+                        "--receipt",
+                        self.receipt_path,
+                        "--effects",
+                        "none",
+                        "--execute",
+                    ]
+                )
+            monitor = debt_queue.Queue(self.state).monitor()
+        self.assertEqual(code, 0)
+        result = json.loads(out)
+        self.assertEqual(
+            result,
+            {
+                "status": "deferred",
+                "job_id": receipt["job_id"],
+                "reason": "expired_lease_no_effects",
+            },
+        )
+        self.assertEqual(monitor["states"]["deferred"], 1)
+        self.assertEqual(monitor["states"]["leased"], 0)
+        self.assertEqual(debt_queue.Queue(self.state).next(), [])
+
+    def test_reconcile_dry_run_does_not_change_lease_status(self):
+        import debt_queue
+
+        with mock.patch.object(debt_queue, "git_identity", side_effect=self._identity):
+            create = debt_queue.slice_queue(
+                self.repo, self.export, self.state, "main", execute=True
+            )
+            self.assertEqual(create["status"], "created")
+            receipt = debt_queue.Queue(self.state).claim(execute=True, now=100, lease_seconds=1)
+            self.assertEqual(receipt["status"], "leased")
+            with open(self.receipt_path, "w", encoding="utf-8") as fh:
+                json.dump(receipt, fh)
+            with mock.patch.object(debt_queue.time, "time", return_value=200.0):
+                code, out = self._run(
+                    [
+                        "reconcile",
+                        "--state",
+                        self.state,
+                        "--receipt",
+                        self.receipt_path,
+                        "--effects",
+                        "none",
+                    ]
+                )
+            monitor = debt_queue.Queue(self.state).monitor()
+        self.assertEqual(code, 0)
+        self.assertEqual(json.loads(out), {"status": "dry-run", "action": "reconcile"})
+        self.assertEqual(monitor["states"]["leased"], 1)
+        self.assertEqual(monitor["states"]["deferred"], 0)
+
+
 class AnalyzeCommandTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()

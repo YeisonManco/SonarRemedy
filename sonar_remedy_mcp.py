@@ -288,6 +288,34 @@ TOOLS = [
             "required": ["state"],
         },
     },
+    {
+        "name": "sonar_remedy_defer",
+        "description": "Defer pending/proposed work without changing target files. Default is dry-run; execute=true records the deferral.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "state": {"type": "string"},
+                "job": {"type": "string"},
+                "reason": {"type": "string"},
+                "execute": {"type": "boolean"},
+            },
+            "required": ["state", "job", "reason"],
+        },
+    },
+    {
+        "name": "sonar_remedy_reconcile",
+        "description": "Resolve an expired lease; never automatically retries. Requires a saved claim JSON (receipt) with the exact lease identity, and an explicit effects assessment (none|unknown). Default is dry-run; execute=true resolves the lease.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "state": {"type": "string"},
+                "receipt": {"type": "string"},
+                "effects": {"type": "string", "enum": ["none", "unknown"]},
+                "execute": {"type": "boolean"},
+            },
+            "required": ["state", "receipt", "effects"],
+        },
+    },
 ]
 
 
@@ -435,6 +463,26 @@ def build_argv(name: str, arguments: dict[str, Any] | None) -> list[str]:
         return g + ["report", "--state", a["state"]]
     if name == "sonar_remedy_document":
         return g + ["document", "--state", a["state"]] + (["--execute"] if a.get("execute") else [])
+    if name == "sonar_remedy_defer":
+        return (
+            g
+            + ["defer", "--state", a["state"], "--job", a["job"], "--reason", a["reason"]]
+            + (["--execute"] if a.get("execute") else [])
+        )
+    if name == "sonar_remedy_reconcile":
+        return (
+            g
+            + [
+                "reconcile",
+                "--state",
+                a["state"],
+                "--receipt",
+                a["receipt"],
+                "--effects",
+                a["effects"],
+            ]
+            + (["--execute"] if a.get("execute") else [])
+        )
     raise ValueError(f"unknown tool: {name}")
 
 

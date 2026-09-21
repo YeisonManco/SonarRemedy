@@ -25,7 +25,7 @@ sonar-remedy-config = "sonar_remedy_config:main"
 [tool.setuptools]
 py-modules = [
     "sonar_remedy", "sonar_remedy_config", "sonar_remedy_mcp",
-    "debt_work", "debt_queue", "debt_executor", "debt_runner", "debt_transport", "debtpack",
+    "debt_queue", "debt_executor", "debt_runner", "debt_transport", "debtpack",
     "sonar_client", "sonar_fetch", "sonar_local", "sonar_exclusions", "sonar_gateway",
     "sonar_suppressions", "sonar_exclusions_report", "sonar_hooks", "context_resolver",
     "typesafe_client",
