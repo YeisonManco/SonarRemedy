@@ -1,8 +1,10 @@
 """Tests for the exclusions report scanner (language + categories + rules)."""
 
+import os
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 import sonar_exclusions_report as report
 
@@ -74,6 +76,100 @@ class ExclusionsReportTests(unittest.TestCase):
         result = report.remove_rule(self.root, "ANGULAR.TS_IGNORE")
         self.assertIn("whitelist", result["removed_from"])
         self.assertNotIn("ANGULAR.TS_IGNORE", report.list_rules(self.root)["whitelist"])
+
+
+class TypeSafeLegitimacyScoringTests(unittest.TestCase):
+    """Advisory-only, opt-in-via-env-var: zero behavior change with no key."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name)
+        patcher = mock.patch.dict(os.environ, {}, clear=False)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        os.environ.pop("TYPESAFE_API_KEY", None)
+
+    def write(self, rel: str, content: str) -> None:
+        path = self.root / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(content, encoding="utf-8")
+
+    def test_no_key_leaves_findings_unchanged_and_makes_no_calls(self):
+        self.write("src/a.ts", "// @ts-ignore\nconst x = 1;\n")
+        with mock.patch("typesafe_client.legitimacy_score") as scorer:
+            result = report.scan(self.root)
+        scorer.assert_not_called()
+        for finding in result["findings"]:
+            self.assertNotIn("typesafe_legitimacy", finding)
+
+    def test_key_set_scores_pending_findings_prioritized_by_severity(self):
+        os.environ["TYPESAFE_API_KEY"] = "secret-token"
+        # LOW severity (ISTANBUL_IGNORE_NEXT) written before HIGH (SONAR_EXCLUSIONS)
+        # so file-order alone would score LOW first; severity order must win.
+        self.write("src/a.ts", "// istanbul ignore next\n")
+        self.write("sonar-project.properties", "sonar.exclusions=**/*.spec.ts\n")
+        with mock.patch(
+            "typesafe_client.legitimacy_score", return_value={"status": "ok", "noul": 0.1}
+        ) as scorer:
+            with mock.patch.object(report, "MAX_SCORED", 1):
+                result = report.scan(self.root)
+        self.assertEqual(scorer.call_count, 1)
+        scored = [f for f in result["findings"] if "typesafe_legitimacy" in f]
+        self.assertEqual(len(scored), 1)
+        self.assertEqual(scored[0]["severity"], "HIGH")
+        self.assertEqual(scored[0]["typesafe_legitimacy"], {"status": "ok", "noul": 0.1})
+
+    def test_blocked_findings_are_never_scored(self):
+        os.environ["TYPESAFE_API_KEY"] = "secret-token"
+        self.write("src/a.ts", "// @ts-ignore\n")
+        with mock.patch(
+            "typesafe_client.legitimacy_score", return_value={"status": "ok", "noul": 0.1}
+        ) as scorer:
+            result = report.scan(
+                self.root, rules={"whitelist": set(), "blacklist": {"ANGULAR.TS_IGNORE"}}
+            )
+        scorer.assert_not_called()
+        self.assertEqual(result["findings"][0]["status"], "blocked")
+        self.assertNotIn("typesafe_legitimacy", result["findings"][0])
+
+    def test_scoring_is_bounded_to_max_scored(self):
+        os.environ["TYPESAFE_API_KEY"] = "secret-token"
+        content = "".join(f"// @ts-ignore item {i}\nconst x{i} = {i};\n" for i in range(5))
+        self.write("src/a.ts", content)
+        with mock.patch(
+            "typesafe_client.legitimacy_score", return_value={"status": "ok", "noul": 0.1}
+        ) as scorer:
+            with mock.patch.object(report, "MAX_SCORED", 2):
+                report.scan(self.root)
+        self.assertEqual(scorer.call_count, 2)
+
+
+class TruncationDisclosureTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name)
+
+    def write(self, rel: str, content: str) -> None:
+        path = self.root / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(content, encoding="utf-8")
+
+    def test_truncated_false_when_cap_not_hit(self):
+        self.write("src/a.ts", "// @ts-ignore\n")
+        result = report.scan(self.root)
+        self.assertFalse(result["truncated"])
+        self.assertNotIn("stopped early", result["notice"])
+
+    def test_truncated_true_when_cap_hit(self):
+        content = "".join(f"// @ts-ignore item {i}\n" for i in range(5))
+        self.write("src/a.ts", content)
+        with mock.patch.object(report, "MAX_FINDINGS", 2):
+            result = report.scan(self.root)
+        self.assertTrue(result["truncated"])
+        self.assertIn("stopped early", result["notice"])
+        self.assertIn("2-finding cap", result["notice"])
 
 
 if __name__ == "__main__":

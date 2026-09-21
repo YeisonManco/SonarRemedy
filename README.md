@@ -104,7 +104,10 @@ what the mechanical tools cannot: understanding the code and writing an idiomati
 | `slice` | Build a durable queue from an export |
 | `run` | Lease/process a bounded manual proposal batch |
 | `integrate` | Serially apply a recorded proposal + run bound checks |
+| `autopilot` | Step one phase of fetch/slice/run/integrate automatically |
+| `recover` | Loop the full cycle (fetch→slice→run→integrate→status) to the end |
 | `configure` | Bind reviewed check commands + the target snapshot |
+| `detect-checks` | Draft `--checks`/`--approve-checks-sha256` from the repo |
 | `scan-suppressions` | Detect Sonar-evasion directives (`certain` vs `ambiguous`) |
 | `scan-exclusions` | Detect Sonar exclusions/suppressions by language + category (17 rules) |
 | `rules` | Manage the exclusion whitelist/blacklist (`list`/`allow`/`block`/`remove`) |
@@ -232,6 +235,10 @@ Don't hand-write it from scratch: `sonarremedy detect-checks --repo <path>` draf
 ### Optional: TypeSafe pre-check
 
 Set `TYPESAFE_API_KEY` and `integrate()` asks TypeSafe's System One a cheap yes/no question — does this proposal's diff plausibly address the Sonar rule it targets? — right before the expensive baseline build runs, and records the answer as evidence (`typesafe-precheck.json` in the job's `integration` folder). It is **opt-in and purely advisory**: with no key set (the default), nothing about `integrate()` changes at all, and even a network failure or a malformed response never blocks, gates, or alters integration — the worst case is an `error` status recorded instead of a score.
+
+### Optional: TypeSafe exclusion/suppression triage
+
+With the same env var set, `sonar_remedy_scan_exclusions` / `sonar_remedy_scan_suppressions` (`sonar_exclusions_report.scan()` / `sonar_suppressions.scan()`) also ask System One a cheap yes/no question per finding — does this NOSONAR/`@ts-ignore`/pragma-style directive look like a justified exception, or is it just silencing a real issue? — and attach the answer as an advisory `typesafe_legitimacy` field, so a human reviewing hundreds of findings can prioritize the least-justified-looking ones. It only scores each scan's most-severe still-open findings (pending exclusions, ambiguous suppressions), never an already-blocked/certain one, capped at 20 calls per scan regardless of findings count. Same contract as the pre-check: opt-in, purely advisory, **never auto-blocks or auto-allows an exclusion** — a human still decides, per `host-agents/sonarremedy-instructions.md` §9 — and with no key set nothing about either scan changes.
 
 ## Commit gate (pre-push hook)
 

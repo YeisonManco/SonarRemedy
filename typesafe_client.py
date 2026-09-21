@@ -77,42 +77,36 @@ def _safe_reason(error: Exception) -> str:
     return "precheck failed: " + type(error).__name__
 
 
-def precheck_proposal(
-    rule: str, kind: str, path: str, edits: list[dict[str, Any]], *, timeout: int = 15
+def _ask_noul(
+    state: Any,
+    instructions: str,
+    criteria: dict[str, str],
+    *,
+    timeout: int = 15,
+    question_key: str = "result",
 ) -> dict[str, Any]:
-    """Ask a cheap yes/no question: does this diff plausibly address the rule?
+    """Ask System One a single cheap yes/no ("noul") question about `state`.
 
-    Advisory-only. Reads TYPESAFE_API_KEY from the environment only (never
-    config/prompt/args). Missing key returns immediately with no network
-    call. Any failure at all -- network, timeout, non-2xx, malformed or
-    unexpected response -- is caught and returned as data; this function
-    never raises.
+    Shared HTTP/security boilerplate for every advisory TypeSafe question this
+    pack asks: builds the request, calls `_opener()`, enforces a bounded
+    response, and is exception-safe. Reads TYPESAFE_API_KEY from the
+    environment only (never config/prompt/args). Missing key returns
+    immediately with no network call. Any failure at all -- network, timeout,
+    non-2xx, malformed or unexpected response -- is caught and returned as
+    data; this function never raises.
     """
     key = os.environ.get("TYPESAFE_API_KEY")
     if not key:
         return {"status": "unavailable", "reason": "TYPESAFE_API_KEY not set"}
     try:
         payload = {
-            "state": {
-                "rule": str(rule),
-                "kind": str(kind),
-                "path": str(path),
-                "edits": _bound_edits(edits if isinstance(edits, list) else []),
-            },
+            "state": state,
             "model": MODEL,
             "questions": {
-                "addresses_issue": {
+                question_key: {
                     "type": "noul",
-                    "instructions": (
-                        "Does this code change plausibly address the described Sonar rule "
-                        "violation, given the before/after text?"
-                    ),
-                    "criteria": {
-                        "true": "The edit is relevant to the rule and changes the flagged pattern",
-                        "false": (
-                            "The edit is unrelated to the rule or doesn't touch the flagged pattern"
-                        ),
-                    },
+                    "instructions": instructions,
+                    "criteria": criteria,
                 }
             },
         }
@@ -133,9 +127,65 @@ def precheck_proposal(
         if len(raw) > RESPONSE_LIMIT:
             return {"status": "error", "reason": "response byte budget exceeded"}
         body = json.loads(raw)
-        noul = body["answers"]["addresses_issue"]["noul"]
+        noul = body["answers"][question_key]["noul"]
         if isinstance(noul, bool) or not isinstance(noul, (int, float)) or not 0 <= noul <= 1:
             return {"status": "error", "reason": "unexpected noul value"}
         return {"status": "ok", "noul": float(noul)}
     except Exception as error:  # advisory-only: this call must never raise
         return {"status": "error", "reason": _safe_reason(error)}
+
+
+def precheck_proposal(
+    rule: str, kind: str, path: str, edits: list[dict[str, Any]], *, timeout: int = 15
+) -> dict[str, Any]:
+    """Ask a cheap yes/no question: does this diff plausibly address the rule?
+
+    Advisory-only. Same never-raises, opt-in-via-env-var contract as
+    `_ask_noul`; see that docstring for the shared behavior.
+    """
+    state = {
+        "rule": str(rule),
+        "kind": str(kind),
+        "path": str(path),
+        "edits": _bound_edits(edits if isinstance(edits, list) else []),
+    }
+    instructions = (
+        "Does this code change plausibly address the described Sonar rule "
+        "violation, given the before/after text?"
+    )
+    criteria = {
+        "true": "The edit is relevant to the rule and changes the flagged pattern",
+        "false": "The edit is unrelated to the rule or doesn't touch the flagged pattern",
+    }
+    return _ask_noul(state, instructions, criteria, timeout=timeout, question_key="addresses_issue")
+
+
+def legitimacy_score(
+    rule: str, category: str, file: str, evidence: str, *, timeout: int = 15
+) -> dict[str, Any]:
+    """Ask a cheap yes/no question: does this exclusion/suppression look legitimate?
+
+    Advisory-only triage signal for a human reviewing NOSONAR/@ts-ignore/etc.
+    findings -- never auto-blocks or auto-allows anything. Same never-raises,
+    opt-in-via-env-var contract as `_ask_noul`; see that docstring for the
+    shared behavior.
+    """
+    state = {
+        "rule": str(rule),
+        "category": str(category),
+        "file": str(file),
+        "evidence": str(evidence),
+    }
+    instructions = (
+        "Does this Sonar-evasion directive (NOSONAR, @ts-ignore, #pragma, NoWarn, "
+        "coverage exclusion, etc.) look like a legitimate, justified exception rather "
+        "than someone silencing a real issue?"
+    )
+    criteria = {
+        "true": (
+            "The directive includes a reason, links to a ticket, or the surrounding "
+            "context makes the exception clearly justified"
+        ),
+        "false": "No justification is visible, or it looks like the finding is just being silenced",
+    }
+    return _ask_noul(state, instructions, criteria, timeout=timeout, question_key="legitimate")

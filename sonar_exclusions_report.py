@@ -16,11 +16,16 @@ import sys
 from pathlib import Path
 from typing import Any
 
+import typesafe_client
 from debtpack import hidden_secret, linked, relative, safe_path
 
 MAX_VISITED = 20000
 MAX_BYTES = 1024 * 1024
 MAX_FINDINGS = 500
+# Advisory TypeSafe legitimacy scoring: bounded even when TYPESAFE_API_KEY is
+# set, so a large findings list never turns a scan into hundreds of API calls.
+MAX_SCORED = 20
+_SEVERITY_ORDER = {"HIGH": 0, "MEDIUM": 1, "LOW": 2}
 
 CAT_SONAR_EXCLUSIONS = "sonar_exclusions"
 CAT_SONAR_SUPPRESSIONS = "sonar_suppressions"
@@ -322,6 +327,7 @@ def scan(repo: str | Path, *, rules: dict[str, Any] | None = None) -> dict[str, 
                 break
         if len(findings) >= MAX_FINDINGS:
             break
+    truncated = len(findings) >= MAX_FINDINGS
 
     # Apply whitelist (skip) / blacklist (block).
     filtered = []
@@ -332,21 +338,39 @@ def scan(repo: str | Path, *, rules: dict[str, Any] | None = None) -> dict[str, 
         finding["status"] = "blocked" if rule in config["blacklist"] else "pending"
         filtered.append(finding)
 
+    # Advisory-only TypeSafe legitimacy triage: opt-in via TYPESAFE_API_KEY,
+    # bounded to MAX_SCORED calls, only for pending (not already-blocked)
+    # findings, highest severity first. Zero calls and zero output change
+    # when the key is unset.
+    if os.environ.get("TYPESAFE_API_KEY"):
+        pending = sorted(
+            (f for f in filtered if f["status"] == "pending"),
+            key=lambda f: _SEVERITY_ORDER.get(f["severity"], len(_SEVERITY_ORDER)),
+        )
+        for finding in pending[:MAX_SCORED]:
+            finding["typesafe_legitimacy"] = typesafe_client.legitimacy_score(
+                finding["rule"], finding["category"], finding["file"], finding["evidence"]
+            )
+
     counts: dict[str, int] = dict.fromkeys(CATEGORY_NAMES, 0)
     for finding in filtered:
         counts[finding["category"]] = counts.get(finding["category"], 0) + 1
     counts["total"] = len(filtered)
     blocked = sum(1 for f in filtered if f["status"] == "blocked")
+    notice = (
+        f"{len(filtered)} exclusion(s) detected ({blocked} blocked by blacklist)"
+        if filtered
+        else "no exclusions detected"
+    )
+    if truncated:
+        notice += f" (stopped early at the {MAX_FINDINGS}-finding cap, more may exist)"
     return {
         "status": "scanned",
         "files_scanned": files_scanned,
         "counts": counts,
         "findings": filtered,
-        "notice": (
-            f"{len(filtered)} exclusion(s) detected ({blocked} blocked by blacklist)"
-            if filtered
-            else "no exclusions detected"
-        ),
+        "truncated": truncated,
+        "notice": notice,
     }
 
 

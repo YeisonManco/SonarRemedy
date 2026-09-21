@@ -172,5 +172,139 @@ class PrecheckProposalTests(unittest.TestCase):
         self.assertEqual(result["status"], "ok")
 
 
+def noul_body(question_key, noul=0.5):
+    return json.dumps({"answers": {question_key: {"type": "noul", "noul": noul}}}).encode()
+
+
+class AskNoulTests(unittest.TestCase):
+    """_ask_noul is the generic HTTP/security boilerplate precheck_proposal and
+    legitimacy_score both delegate to. It never raises."""
+
+    def setUp(self):
+        patcher = mock.patch.dict(os.environ, {}, clear=False)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        os.environ.pop("TYPESAFE_API_KEY", None)
+
+    def test_missing_key_returns_unavailable_without_network_call(self):
+        fake = FakeOpener()
+        with mock.patch("typesafe_client._opener", return_value=fake):
+            result = tc._ask_noul({"x": 1}, "instructions", {"true": "t", "false": "f"})
+        self.assertEqual(result, {"status": "unavailable", "reason": "TYPESAFE_API_KEY not set"})
+        self.assertEqual(fake.calls, [])
+
+    def test_successful_response_sends_state_instructions_criteria_and_custom_question_key(self):
+        os.environ["TYPESAFE_API_KEY"] = "secret-token"
+        fake = FakeOpener(response=FakeResponse(noul_body("legitimate", 0.42)))
+        with mock.patch("typesafe_client._opener", return_value=fake):
+            result = tc._ask_noul(
+                {"rule": "R1", "category": "c"},
+                "does it look legit?",
+                {"true": "yes", "false": "no"},
+                question_key="legitimate",
+            )
+        self.assertEqual(result, {"status": "ok", "noul": 0.42})
+        request, timeout = fake.calls[0]
+        self.assertEqual(timeout, 15)
+        self.assertEqual(request.get_header("Authorization"), "Bearer secret-token")
+        sent = json.loads(request.data)
+        self.assertEqual(sent["state"], {"rule": "R1", "category": "c"})
+        self.assertEqual(sent["questions"]["legitimate"]["instructions"], "does it look legit?")
+        self.assertEqual(
+            sent["questions"]["legitimate"]["criteria"], {"true": "yes", "false": "no"}
+        )
+        self.assertEqual(sent["questions"]["legitimate"]["type"], "noul")
+
+    def test_default_question_key_round_trips(self):
+        os.environ["TYPESAFE_API_KEY"] = "secret-token"
+        fake = FakeOpener(response=FakeResponse(noul_body("result", 0.9)))
+        with mock.patch("typesafe_client._opener", return_value=fake):
+            result = tc._ask_noul({}, "instr", {"true": "t", "false": "f"})
+        self.assertEqual(result, {"status": "ok", "noul": 0.9})
+        sent = json.loads(fake.calls[0][0].data)
+        self.assertIn("result", sent["questions"])
+
+    def test_custom_timeout_is_forwarded(self):
+        os.environ["TYPESAFE_API_KEY"] = "secret-token"
+        fake = FakeOpener(response=FakeResponse(noul_body("result")))
+        with mock.patch("typesafe_client._opener", return_value=fake):
+            tc._ask_noul({}, "instr", {"true": "t", "false": "f"}, timeout=5)
+        self.assertEqual(fake.calls[0][1], 5)
+
+    def test_network_error_returns_error_without_raising(self):
+        os.environ["TYPESAFE_API_KEY"] = "secret-token"
+        fake = FakeOpener(error=URLError("no route to host"))
+        with mock.patch("typesafe_client._opener", return_value=fake):
+            result = tc._ask_noul({}, "instr", {"true": "t", "false": "f"})
+        self.assertEqual(result["status"], "error")
+        self.assertNotIn("secret-token", result["reason"])
+
+    def test_malformed_json_returns_error_without_raising(self):
+        os.environ["TYPESAFE_API_KEY"] = "secret-token"
+        fake = FakeOpener(response=FakeResponse(b"not json"))
+        with mock.patch("typesafe_client._opener", return_value=fake):
+            result = tc._ask_noul({}, "instr", {"true": "t", "false": "f"})
+        self.assertEqual(result["status"], "error")
+
+    def test_wrong_question_key_in_response_returns_error(self):
+        os.environ["TYPESAFE_API_KEY"] = "secret-token"
+        fake = FakeOpener(response=FakeResponse(noul_body("other_key")))
+        with mock.patch("typesafe_client._opener", return_value=fake):
+            result = tc._ask_noul({}, "instr", {"true": "t", "false": "f"}, question_key="result")
+        self.assertEqual(result["status"], "error")
+
+
+def legit_ok_body(noul=0.75):
+    return json.dumps({"answers": {"legitimate": {"type": "noul", "noul": noul}}}).encode()
+
+
+class LegitimacyScoreTests(unittest.TestCase):
+    def setUp(self):
+        patcher = mock.patch.dict(os.environ, {}, clear=False)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        os.environ.pop("TYPESAFE_API_KEY", None)
+
+    def test_missing_key_returns_unavailable_without_network_call(self):
+        fake = FakeOpener()
+        with mock.patch("typesafe_client._opener", return_value=fake):
+            result = tc.legitimacy_score("DOTNET.NOSONAR", "sonar_suppressions", "a.cs", "NOSONAR")
+        self.assertEqual(result, {"status": "unavailable", "reason": "TYPESAFE_API_KEY not set"})
+        self.assertEqual(fake.calls, [])
+
+    def test_successful_response_sends_rule_category_file_evidence(self):
+        os.environ["TYPESAFE_API_KEY"] = "secret-token"
+        fake = FakeOpener(response=FakeResponse(legit_ok_body(0.75)))
+        with mock.patch("typesafe_client._opener", return_value=fake):
+            result = tc.legitimacy_score(
+                "DOTNET.NOSONAR", "sonar_suppressions", "src/a.cs", "// NOSONAR ticket-123"
+            )
+        self.assertEqual(result, {"status": "ok", "noul": 0.75})
+        sent = json.loads(fake.calls[0][0].data)
+        self.assertEqual(sent["state"]["rule"], "DOTNET.NOSONAR")
+        self.assertEqual(sent["state"]["category"], "sonar_suppressions")
+        self.assertEqual(sent["state"]["file"], "src/a.cs")
+        self.assertEqual(sent["state"]["evidence"], "// NOSONAR ticket-123")
+        questions = sent["questions"]
+        self.assertIn("true", questions[next(iter(questions))]["criteria"])
+        self.assertIn("false", questions[next(iter(questions))]["criteria"])
+
+    def test_network_error_returns_error_without_raising(self):
+        os.environ["TYPESAFE_API_KEY"] = "secret-token"
+        fake = FakeOpener(error=URLError("no route to host"))
+        with mock.patch("typesafe_client._opener", return_value=fake):
+            result = tc.legitimacy_score("R", "c", "f", "e")
+        self.assertEqual(result["status"], "error")
+        self.assertNotIn("secret-token", result["reason"])
+
+    def test_unexpected_shape_returns_error_without_raising(self):
+        os.environ["TYPESAFE_API_KEY"] = "secret-token"
+        body = json.dumps({"unexpected": True}).encode()
+        fake = FakeOpener(response=FakeResponse(body))
+        with mock.patch("typesafe_client._opener", return_value=fake):
+            result = tc.legitimacy_score("R", "c", "f", "e")
+        self.assertEqual(result["status"], "error")
+
+
 if __name__ == "__main__":
     unittest.main()

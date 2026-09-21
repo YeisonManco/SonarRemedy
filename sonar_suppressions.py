@@ -20,11 +20,18 @@ import sys
 from pathlib import Path
 from typing import Any
 
+import typesafe_client
 from debtpack import hidden_secret, linked, relative, safe_path
 
 MAX_VISITED = 20000
 MAX_BYTES = 1024 * 1024
 MAX_FINDINGS = 200
+# Advisory TypeSafe legitimacy scoring: bounded even when TYPESAFE_API_KEY is
+# set, so a large findings list never turns a scan into hundreds of API calls.
+MAX_SCORED = 20
+# No per-finding category field exists in this module's findings (unlike
+# sonar_exclusions_report.py); every finding here is a suppression directive.
+_LEGITIMACY_CATEGORY = "sonar_suppressions"
 
 # Each entry: (regex, kind, certainty). Certain patterns are listed before the
 # ambiguous ones, so a line with both "NOSONAR:rule" and "NOSONAR" resolves to
@@ -152,18 +159,36 @@ def scan(repo: str | Path) -> dict[str, Any]:
                 break
         if len(findings) >= MAX_FINDINGS:
             break
+    truncated = len(findings) >= MAX_FINDINGS
+
+    # Advisory-only TypeSafe legitimacy triage: opt-in via TYPESAFE_API_KEY,
+    # bounded to MAX_SCORED calls, only for "ambiguous" findings (the ones
+    # this module already says need AI judgment) -- "certain" findings are an
+    # unambiguous, settled detection with nothing for TypeSafe to adjudicate.
+    # Zero calls and zero output change when the key is unset.
+    if os.environ.get("TYPESAFE_API_KEY"):
+        ambiguous_findings = [f for f in findings if f["certainty"] == "ambiguous"]
+        for finding in ambiguous_findings[:MAX_SCORED]:
+            finding["typesafe_legitimacy"] = typesafe_client.legitimacy_score(
+                finding["kind"], _LEGITIMACY_CATEGORY, finding["file"], finding["match"]
+            )
+
     certain = sum(1 for f in findings if f["certainty"] == "certain")
     ambiguous = sum(1 for f in findings if f["certainty"] == "ambiguous")
+    notice = (
+        f"{ambiguous} ambiguous suppression(s) need AI judgment"
+        if ambiguous
+        else "no ambiguous suppressions detected"
+    )
+    if truncated:
+        notice += f" (stopped early at the {MAX_FINDINGS}-finding cap, more may exist)"
     return {
         "status": "scanned",
         "files_scanned": files_scanned,
         "findings": findings,
         "counts": {"certain": certain, "ambiguous": ambiguous, "total": len(findings)},
-        "notice": (
-            f"{ambiguous} ambiguous suppression(s) need AI judgment"
-            if ambiguous
-            else "no ambiguous suppressions detected"
-        ),
+        "truncated": truncated,
+        "notice": notice,
     }
 
 
