@@ -1062,15 +1062,20 @@ class RecoverCommandTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
+        # Resolve the 8.3 short name some Windows runners expose in TEMP
+        # (e.g. D:\a\...\RUNNER~1) so hardened path checks (local_path's
+        # case_alias guard) see the canonical form, matching the same fix
+        # already applied in ConfigureIntegrateTests.setUp above.
+        self.base = os.path.realpath(self.tmp.name)
         self._orig_registry = rc.queue_registry_path
-        rc.queue_registry_path = lambda: os.path.join(self.tmp.name, "queues.json")
+        rc.queue_registry_path = lambda: os.path.join(self.base, "queues.json")
         self.addCleanup(lambda: setattr(rc, "queue_registry_path", self._orig_registry))
-        self.repo = os.path.join(self.tmp.name, "target")
+        self.repo = os.path.join(self.base, "target")
         os.makedirs(self.repo)
         with open(os.path.join(self.repo, "a.cs"), "w", encoding="utf-8") as fh:
             fh.write("class A { int Value() => 1; }\n")
-        self.state = os.path.join(self.tmp.name, "queue")
-        self.export = os.path.join(self.tmp.name, "export.json")
+        self.state = os.path.join(self.base, "queue")
+        self.export = os.path.join(self.base, "export.json")
         with open(self.export, "w", encoding="utf-8") as fh:
             json.dump(
                 {
@@ -1088,9 +1093,9 @@ class RecoverCommandTests(unittest.TestCase):
                 },
                 fh,
             )
-        self.config_path = os.path.join(self.tmp.name, "config.json")
+        self.config_path = os.path.join(self.base, "config.json")
         rc.save(_valid_config(), self.config_path)
-        self.checks = os.path.join(self.tmp.name, "checks.json")
+        self.checks = os.path.join(self.base, "checks.json")
         exe_sha = __import__("hashlib").sha256(__import__("sys").executable.encode()).hexdigest()
         # Minimal valid checks.json (characterization, build+trx).
         with open(self.checks, "w", encoding="utf-8") as fh:
@@ -1198,7 +1203,7 @@ class RecoverCommandTests(unittest.TestCase):
             )
         )
         os.environ["SONAR_TOKEN"] = "fixture-token"
-        base = os.path.join(self.tmp.name, "nested", "state-recover")
+        base = os.path.join(self.base, "nested", "state-recover")
         with mock.patch.object(
             sonar_fetch,
             "fetch",
