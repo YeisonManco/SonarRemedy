@@ -16,6 +16,35 @@ read-only. When you *develop* it (add a command, fix a bug), follow these rules.
 3. Mutations require `--execute`; a dry-run default never writes/spawns.
 4. No commits/push here — those are separate human operations under the target repo's policy.
 5. Python stdlib only — no pip dependencies (the pack must stay dependency-free).
+6. **A green local suite is not proof of a green CI.** After pushing, check the actual GitHub Actions run for that commit (`gh run list` / the Actions tab) before calling the work done — see the Windows CI gotcha below for the specific, recurring way local and CI diverge on this pack.
+
+## Windows CI gotcha: `case_alias` from temp-dir short names
+
+GitHub Actions' Windows runner sometimes exposes an 8.3 short path name for `TEMP`
+(e.g. `D:\a\...\RUNNER~1`) that this pack's local dev machines never see. Any test
+whose fixture builds a path straight from `tempfile.TemporaryDirectory().name` —
+then later reads that path back through a case-sensitivity guard
+(`debt_queue.local_path`, `canonical_case`) — can pass locally and still fail on
+CI with `Blocked: case_alias`, because the raw name and the filesystem's actual
+case disagree only on that runner.
+
+**Fix, in every new test class whose `setUp` builds paths under a temp dir and
+whose tests execute code that reads those paths back** (not just tests that mock
+around the read): resolve the temp dir once with `os.path.realpath()` and build
+every path from that, not from `self.tmp.name` directly:
+
+```python
+def setUp(self):
+    self.tmp = tempfile.TemporaryDirectory()
+    self.addCleanup(self.tmp.cleanup)
+    self.base = os.path.realpath(self.tmp.name)  # do this first
+    self.repo = os.path.join(self.base, "target")  # never self.tmp.name
+```
+
+See `ConfigureIntegrateTests.setUp` and `RecoverCommandTests.setUp` in
+`tests/test_sonar_remedy.py` for the established pattern. This bit `recover`'s
+tests once already (fixed in commit `33c72fe`) — the failure only ever shows up
+on CI, never locally, which is exactly why step 6 above exists.
 
 ## Code style (ruff + type hints)
 
