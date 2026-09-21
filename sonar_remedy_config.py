@@ -11,6 +11,7 @@ import getpass
 import json
 import os
 import re
+import subprocess
 from collections.abc import Callable
 from typing import Any
 from urllib.parse import unquote, urlsplit, urlunsplit
@@ -184,6 +185,218 @@ def list_projects() -> list[str]:
     if not os.path.isdir(directory):
         return []
     return sorted(name[:-5] for name in os.listdir(directory) if name.endswith(".json"))
+
+
+def canonical_path(path: str) -> str:
+    """Case-folded, resolved absolute path (Windows case-insensitive)."""
+    return os.path.normcase(os.path.realpath(os.path.abspath(path)))
+
+
+def normalize_repo_url(url: str) -> str:
+    """Normalize a git remote URL for advisory comparison.
+
+    Strips credentials (so an embedded PAT never blocks a match), unquotes the
+    path, drops a trailing ``.git`` and trailing slash, and lowercases. Used only
+    to PICK a project config; the queue binding stays the authoritative identity.
+    """
+    value = (url or "").strip()
+    if not value:
+        return ""
+    if "://" in value:
+        parts = urlsplit(value)
+        host = (parts.hostname or "").lower()
+        if parts.port:
+            host = f"{host}:{parts.port}"
+        path = unquote((parts.path or "").rstrip("/")).lower()
+        if path.endswith(".git"):
+            path = path[:-4].rstrip("/")
+        return f"{parts.scheme.lower()}://{host}{path}"
+    match = re.match(r"^(?:[^@]+@)?([^:/]+):(.+)$", value)
+    if match:
+        path = unquote(match.group(2).rstrip("/")).lower()
+        if path.endswith(".git"):
+            path = path[:-4].rstrip("/")
+        return f"ssh://{match.group(1).lower()}/{path}"
+    return value.lower().rstrip("/")
+
+
+def _git_remote_url(checkout: str) -> str | None:
+    """Return the ``origin`` remote URL for a checkout, or None (never raises)."""
+    env = {k: v for k, v in os.environ.items() if not k.upper().startswith(("GIT_", "SONAR"))}
+    try:
+        process = subprocess.run(
+            ["git", "-C", checkout, "remote", "get-url", "origin"],
+            env=env,
+            capture_output=True,
+            timeout=10,
+            check=False,
+        )
+    except (FileNotFoundError, OSError, subprocess.TimeoutExpired):
+        return None
+    if process.returncode:
+        return None
+    return process.stdout.decode("utf-8", "replace").strip() or None
+
+
+def resolve_project_for_checkout(
+    checkout: str,
+    projects: list[str] | None = None,
+    *,
+    get_remote: Callable[[str], str | None] | None = None,
+) -> dict[str, Any]:
+    """Resolve which saved project config binds to a local checkout.
+
+    Advisory only: used to PICK a project config, never as the authoritative
+    identity (the queue binding owns that). Matches by canonical ``local_path``
+    equality, or by normalized git remote URL (credentials stripped). Returns
+    ``{"status": "ok", "project", "matches"}``, ``{"status": "ambiguous",
+    "matches"}``, or ``{"status": "none", "matches": []}``.
+    """
+    checkout = canonical_path(checkout)
+    names = list_projects() if projects is None else list(projects)
+    remote: str | None = None
+    if get_remote is not None:
+        try:
+            remote = get_remote(checkout)
+        except Exception:
+            remote = None
+    elif os.path.isdir(checkout):
+        remote = _git_remote_url(checkout)
+    matches: list[dict[str, str]] = []
+    for name in names:
+        try:
+            cfg = load_project(name)
+        except ConfigError:
+            continue
+        repository = cfg.get("repository") or {}
+        reason = ""
+        local = repository.get("local_path")
+        if local and canonical_path(local) == checkout:
+            reason = "local_path"
+        if (
+            not reason
+            and remote
+            and normalize_repo_url(remote) == normalize_repo_url(repository.get("url", ""))
+        ):
+            reason = "remote_url"
+        if reason:
+            matches.append({"name": name, "reason": reason})
+    if len(matches) == 1:
+        return {"status": "ok", "project": matches[0]["name"], "matches": matches}
+    if len(matches) > 1:
+        return {"status": "ambiguous", "matches": matches}
+    return {"status": "none", "matches": []}
+
+
+def list_project_collisions(projects: list[str] | None = None) -> list[dict[str, str]]:
+    """Return pairs of saved projects that share a target (local_path or remote URL)."""
+    names = list_projects() if projects is None else list(projects)
+    entries: list[dict[str, str]] = []
+    for name in names:
+        try:
+            cfg = load_project(name)
+        except ConfigError:
+            continue
+        repository = cfg.get("repository") or {}
+        local = repository.get("local_path")
+        entries.append(
+            {
+                "name": name,
+                "local": canonical_path(local) if local else "",
+                "url": normalize_repo_url(repository.get("url", "")),
+            }
+        )
+    collisions: list[dict[str, str]] = []
+    for i in range(len(entries)):
+        for j in range(i + 1, len(entries)):
+            a, b = entries[i], entries[j]
+            reason = ""
+            if a["local"] and a["local"] == b["local"]:
+                reason = "local_path"
+            elif a["url"] and a["url"] == b["url"]:
+                reason = "remote_url"
+            if reason:
+                collisions.append(
+                    {"project_a": a["name"], "project_b": b["name"], "reason": reason}
+                )
+    return collisions
+
+
+def url_embeds_credentials(url: str) -> bool:
+    """True when a URL carries userinfo (e.g. a PAT embedded in a git remote)."""
+    value = (url or "").strip()
+    if not value or "://" not in value:
+        return False
+    parts = urlsplit(value)
+    return bool(parts.username or parts.password)
+
+
+def detect_remote_credentials(
+    checkout: str, *, get_remote: Callable[[str], str | None] | None = None
+) -> dict[str, Any]:
+    """Report whether a checkout's origin remote embeds credentials (never echoes them)."""
+    remote = get_remote(checkout) if get_remote is not None else _git_remote_url(checkout)
+    if not remote:
+        return {"status": "none", "detail": "no origin remote"}
+    if url_embeds_credentials(remote):
+        return {
+            "status": "warning",
+            "detail": "origin remote embeds credentials",
+            "fix": "re-set the remote without the token and use a credential manager or env PAT",
+        }
+    return {"status": "ok", "detail": "origin remote has no embedded credentials"}
+
+
+def queue_registry_path() -> str:
+    return os.path.join(os.path.expanduser("~"), ".sonar-remedy", "queues.json")
+
+
+def _read_queue_registry() -> dict[str, list[str]]:
+    path = queue_registry_path()
+    if not os.path.isfile(path):
+        return {}
+    try:
+        with open(path, encoding="utf-8") as handle:
+            data = json.load(handle)
+    except (OSError, ValueError):
+        return {}
+    if not isinstance(data, dict):
+        return {}
+    return {k: v for k, v in data.items() if isinstance(k, str) and isinstance(v, list)}
+
+
+def _write_queue_registry(registry: dict[str, list[str]]) -> None:
+    directory = os.path.dirname(queue_registry_path())
+    os.makedirs(directory, exist_ok=True)
+    tmp = queue_registry_path() + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as handle:
+        json.dump(registry, handle, indent=2, sort_keys=True)
+    os.replace(tmp, queue_registry_path())
+
+
+def register_queue(project: str, state_dir: str) -> None:
+    """Record ``state_dir`` under ``project`` in the queue index (idempotent)."""
+    registry = _read_queue_registry()
+    queues = registry.get(project, [])
+    canonical = canonical_path(state_dir)
+    if not any(canonical_path(q) == canonical for q in queues):
+        queues.append(canonical)
+    registry[project] = queues
+    _write_queue_registry(registry)
+
+
+def project_for_queue(state_dir: str) -> str | None:
+    """Return the project registered for ``state_dir``, or None."""
+    canonical = canonical_path(state_dir)
+    for project, queues in _read_queue_registry().items():
+        if any(canonical_path(q) == canonical for q in queues):
+            return project
+    return None
+
+
+def queues_for_project(project: str) -> list[str]:
+    """Return the state dirs registered for ``project`` (may be empty)."""
+    return list(_read_queue_registry().get(project, []))
 
 
 def prompt(

@@ -51,7 +51,30 @@ def _load_config(args: argparse.Namespace) -> dict[str, Any]:
         return rc.load(args.config)
     if args.project:
         return rc.load_project(args.project)
+    # No explicit project/config: try to bind the current checkout to exactly one
+    # saved project before falling back to the default config. This prevents the
+    # agent from silently running against the wrong project when it stands inside
+    # a checkout that matches a saved project.
+    resolved = rc.resolve_project_for_checkout(os.getcwd())
+    if resolved["status"] == "ok":
+        return rc.load_project(resolved["project"])
+    if resolved["status"] == "ambiguous":
+        names = ", ".join(m["name"] for m in resolved["matches"])
+        raise rc.ConfigError(
+            "multiple saved projects match this checkout (" + names + "); "
+            "pass --project to disambiguate"
+        )
     return rc.load(rc.default_config_path())
+
+
+def _resolve_project_name(args: argparse.Namespace) -> str | None:
+    """Return the project name this run targets (for the queue index), or None."""
+    if getattr(args, "project", None):
+        return args.project
+    if getattr(args, "config", None):
+        return None
+    resolved = rc.resolve_project_for_checkout(os.getcwd())
+    return resolved["project"] if resolved["status"] == "ok" else None
 
 
 INSTR_SECTION_START = "<!-- SonarRemedy:start -->"
@@ -257,6 +280,60 @@ def _doctor(
     """
     checks: list[dict[str, Any]] = []
 
+    resolved = rc.resolve_project_for_checkout(repo or project_dir)
+    if resolved["status"] == "ok":
+        checks.append({"name": "project", "status": "ok", "detail": resolved["project"]})
+    elif resolved["status"] == "ambiguous":
+        names = ", ".join(m["name"] for m in resolved["matches"])
+        checks.append(
+            {
+                "name": "project",
+                "status": "warning",
+                "detail": "ambiguous: " + names,
+                "fix": "pass --project to disambiguate",
+            }
+        )
+    else:
+        checks.append(
+            {
+                "name": "project",
+                "status": "warning",
+                "detail": "no saved project matches this checkout",
+                "fix": "run `sonarremedy configure-project` or pass --project",
+            }
+        )
+
+    collisions = rc.list_project_collisions()
+    if collisions:
+        detail = "; ".join(
+            f"{c['project_a']}<->{c['project_b']} ({c['reason']})" for c in collisions
+        )
+        checks.append(
+            {
+                "name": "project_collisions",
+                "status": "warning",
+                "detail": detail,
+                "fix": "give the projects distinct local_path / repository.url values",
+            }
+        )
+
+    creds = rc.detect_remote_credentials(repo or project_dir)
+    if creds["status"] == "warning":
+        checks.append(
+            {
+                "name": "remote_credentials",
+                "status": "warning",
+                "detail": creds["detail"],
+                "fix": creds["fix"],
+            }
+        )
+    elif creds["status"] == "ok":
+        checks.append({"name": "remote_credentials", "status": "ok", "detail": creds["detail"]})
+    else:
+        checks.append(
+            {"name": "remote_credentials", "status": "info", "detail": "no origin remote"}
+        )
+
     previous = _read_pack_version(project_dir)
     if previous is None:
         checks.append(
@@ -333,6 +410,14 @@ def _doctor(
             )
 
     if state:
+        registered = rc.project_for_queue(state)
+        if registered:
+            checks.append({"name": "queue_project", "status": "ok", "detail": registered})
+        else:
+            checks.append(
+                {"name": "queue_project", "status": "info", "detail": "not in the queue index"}
+            )
+
         import debt_queue
 
         try:
@@ -864,7 +949,8 @@ def recover(
     if type(max_cycles) is not int or not 1 <= max_cycles <= 100:
         raise debt_queue.Blocked("invalid_recover_cycles")
     repo_abs = str(debt_queue.canonical_case(repo))
-    state_abs = os.path.abspath(state_base)
+    state_abs = str(debt_queue.canonical_case(state_base))
+    checks_abs = str(debt_queue.canonical_case(checks_path))
     if not execute:
         return {
             "status": "dry-run",
@@ -875,7 +961,7 @@ def recover(
         }
     if not approved_sha:
         raise debt_queue.Blocked("approved_checks_sha_required")
-    checks = debt_queue.parse_json(debt_queue.read_bytes(checks_path, debt_queue.MAX_EXPORT))
+    checks = debt_queue.parse_json(debt_queue.read_bytes(checks_abs, debt_queue.MAX_EXPORT))
     token_env = rcfg["sonar"]["token_env"]
     if not os.environ.get(token_env):
         raise debt_queue.Blocked(f"{token_env} must be present in the environment")
@@ -917,7 +1003,7 @@ def recover(
                 "state": state,
                 "cycles": cycle,
                 "waiting": ran.get("waiting", []),
-                "next_command": f"write one proposal per waiting proposal_path, then `sonarremedy recover --state {state_abs} --repo {repo_abs} --checks {checks_path} --approve-checks-sha256 {approved_sha} --execute`",
+                "next_command": f"write one proposal per waiting proposal_path, then `sonarremedy recover --state {state_abs} --repo {repo_abs} --checks {checks_abs} --approve-checks-sha256 {approved_sha} --execute`",
             }
         if ran.get("status") == "quiescent":
             summary["cycles"] = cycle
@@ -1599,6 +1685,10 @@ def main(argv: list[str] | None = None) -> int:
                 rcfg["repository"]["main_branch"],
                 execute=args.execute,
             )
+            if result.get("status") == "created":
+                name = _resolve_project_name(args)
+                if name:
+                    rc.register_queue(name, args.state)
             print(json.dumps(result, sort_keys=True))
             return 0
         if args.command == "run":

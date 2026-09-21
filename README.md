@@ -137,6 +137,9 @@ sonarremedy doctor --fix                            # apply the safe repairs
 - `--state` is the **queue directory** created by `slice` (it contains `queue.sqlite3`), not an export `.json` file.
 - Each identity mismatch reports the **exact fix command**: `git -C <root> checkout <branch>` (branch), `run --repo <bound root>` (root), or re-fetch + re-slice (revision).
 - `--fix` applies only the **safe repairs** — it re-runs `init` when the project's recorded version is behind the pack or init files are missing (and re-writes the pointer + version marker). It **never** touches a queue or the git state.
+- `doctor` also reports a **`project`** check: which saved project binds to the checkout you passed (`ok` / `ambiguous` / `warning`). This is your "am I about to touch the right repo?" guard. A `warning` means no saved project matches this checkout; `ambiguous` means two configs match — pass `--project` to disambiguate.
+- Project auto-detection: when you run a pipeline command (`fetch`/`slice`/`run`/…) **without** `--project`/`--config`, the pack auto-selects the saved project that matches the current checkout (by canonical `local_path` or normalized git remote URL, credentials stripped). No match falls back to the default config; an ambiguous match errors asking for `--project`.
+- `doctor` also reports three more safety checks: `project_collisions` (two saved projects share a `local_path`/URL — give them distinct values), `remote_credentials` (the checkout's `origin` remote embeds a token — re-set it without the token and use a credential manager), and `queue_project` (the project registered for a `--state` queue in the `~/.sonar-remedy/queues.json` index — `slice --execute` records it automatically).
 
 > **One worktree per branch.** Slicing binds the queue to the checkout you passed. On a multi-worktree repo, always use the SAME `--repo` path across `fetch` → `slice` → `run`, or you will hit `target_identity_mismatch`.
 >

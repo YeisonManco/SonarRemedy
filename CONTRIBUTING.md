@@ -121,6 +121,7 @@ hint (`language_hint_for`), so both must stay accurate.
 - Config + projects: `~/.sonar-remedy/config.json`, `~/.sonar-remedy/projects/<name>.json`.
 - Fetch exports: `~/.sonar-remedy/runs/<project>/` (or `--output`).
 - Queues: a user-chosen `--state` directory (outside the target repo).
+- Queue index: `~/.sonar-remedy/queues.json` (maps project → state dirs; `slice --execute` records it).
 - Secrets (`SONAR_TOKEN`, `GIT_PAT`): environment only — never in files, args, or prompts.
 
 ## Runtime integration (VS Code / Copilot Chat)

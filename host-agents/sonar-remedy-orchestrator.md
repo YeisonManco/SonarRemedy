@@ -25,6 +25,14 @@ pack CLI; workers only return proposals (see `sonar-worker.md`).
 
 When the user says "recuperá la deuda del proyecto X" (or similar):
 
+0. **Resolve the checkout identity first, and pass it explicitly every time.**
+   The pack binds queues to the EXACT git identity (root/branch/revision) of the
+   checkout you pass, so a recovery driven from the wrong folder runs against the
+   wrong project. Before anything else: `git rev-parse --show-toplevel` and
+   `git rev-parse --abbrev-ref HEAD` for the repo you are actually working in, and
+   pass that exact path as `--repo`/`--dir` on every command. `doctor --dir <checkout>`
+   (or `--repo`) now reports a `project` check naming which saved project binds to
+   that checkout (`ok` / `ambiguous` / `warning`); run it before mutating anything.
 1. **Briefing — ask only what is missing.**
    - Local checkout path (`repository.local_path` in config, or ask).
    - Main branch (default `main`).

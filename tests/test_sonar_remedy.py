@@ -1,5 +1,6 @@
 """Tests for the SonarRemedy facade that drives the pipeline from config."""
 
+import argparse
 import contextlib
 import io
 import json
@@ -94,6 +95,161 @@ class FetchCommandTests(unittest.TestCase):
         self.assertEqual(config_arg.project, "my-project")
         self.assertEqual(config_arg.branch, "main")
         self.assertEqual(config_arg.url, "https://sonar.example.com")
+
+
+class LoadConfigAutoDetectTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self._orig = rc.projects_dir
+        rc.projects_dir = lambda: os.path.join(self.tmp.name, "projects")
+        self.addCleanup(lambda: setattr(rc, "projects_dir", self._orig))
+
+    def test_auto_detects_project_from_checkout(self):
+        checkout = os.path.join(self.tmp.name, "checkout")
+        os.makedirs(checkout)
+        cfg = _valid_config()
+        cfg["repository"]["local_path"] = checkout
+        rc.save_project("front", cfg)
+        args = argparse.Namespace(config=None, project=None)
+        with mock.patch.object(sonar_remedy.os, "getcwd", return_value=checkout):
+            loaded = sonar_remedy._load_config(args)
+        self.assertEqual(loaded["sonar"]["project_key"], "my-project")
+        self.assertEqual(loaded["repository"]["local_path"], checkout)
+
+    def test_auto_detect_falls_back_to_default_config(self):
+        args = argparse.Namespace(config=None, project=None)
+        default_path = os.path.join(self.tmp.name, "default.json")
+        with (
+            mock.patch.object(sonar_remedy.os, "getcwd", return_value=self.tmp.name),
+            mock.patch.object(rc, "default_config_path", return_value=default_path),
+        ):
+            rc.save(_valid_config(), default_path)
+            loaded = sonar_remedy._load_config(args)
+        self.assertEqual(loaded["sonar"]["project_key"], "my-project")
+
+
+class DoctorProjectBindingTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self._orig = rc.projects_dir
+        rc.projects_dir = lambda: os.path.join(self.tmp.name, "projects")
+        self.addCleanup(lambda: setattr(rc, "projects_dir", self._orig))
+
+    def _project_check(self, result):
+        return [c for c in result["checks"] if c["name"] == "project"]
+
+    def test_doctor_reports_resolved_project(self):
+        checkout = os.path.join(self.tmp.name, "checkout")
+        os.makedirs(checkout)
+        cfg = _valid_config()
+        cfg["repository"]["local_path"] = checkout
+        rc.save_project("front", cfg)
+        result = sonar_remedy._doctor(repo=checkout, state=None, project_dir=checkout)
+        checks = self._project_check(result)
+        self.assertEqual(len(checks), 1)
+        self.assertEqual(checks[0]["status"], "ok")
+        self.assertEqual(checks[0]["detail"], "front")
+
+    def test_doctor_reports_no_matching_project(self):
+        checkout = os.path.join(self.tmp.name, "checkout")
+        os.makedirs(checkout)
+        result = sonar_remedy._doctor(repo=checkout, state=None, project_dir=checkout)
+        checks = self._project_check(result)
+        self.assertEqual(len(checks), 1)
+        self.assertEqual(checks[0]["status"], "warning")
+
+
+class DoctorSafetyChecksTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self._orig_projects = rc.projects_dir
+        rc.projects_dir = lambda: os.path.join(self.tmp.name, "projects")
+        self.addCleanup(lambda: setattr(rc, "projects_dir", self._orig_projects))
+        self._orig_registry = rc.queue_registry_path
+        rc.queue_registry_path = lambda: os.path.join(self.tmp.name, "queues.json")
+        self.addCleanup(lambda: setattr(rc, "queue_registry_path", self._orig_registry))
+
+    def test_doctor_reports_project_collisions(self):
+        shared = os.path.join(self.tmp.name, "shared")
+        os.makedirs(shared)
+        for name in ("front", "front-alt"):
+            cfg = _valid_config()
+            cfg["repository"]["local_path"] = shared
+            rc.save_project(name, cfg)
+        result = sonar_remedy._doctor(repo=shared, state=None, project_dir=shared)
+        checks = [c for c in result["checks"] if c["name"] == "project_collisions"]
+        self.assertEqual(len(checks), 1)
+        self.assertEqual(checks[0]["status"], "warning")
+        self.assertIn("front", checks[0]["detail"])
+
+    def test_doctor_reports_embedded_remote_credentials(self):
+        checkout = os.path.join(self.tmp.name, "checkout")
+        os.makedirs(checkout)
+        with mock.patch.object(
+            rc, "_git_remote_url", return_value="https://pat@dev.azure.com/org/repo"
+        ):
+            result = sonar_remedy._doctor(repo=checkout, state=None, project_dir=checkout)
+        checks = [c for c in result["checks"] if c["name"] == "remote_credentials"]
+        self.assertEqual(len(checks), 1)
+        self.assertEqual(checks[0]["status"], "warning")
+        self.assertNotIn("pat@", json.dumps(checks))
+
+    def test_doctor_reports_registered_queue_project(self):
+        checkout = os.path.join(self.tmp.name, "checkout")
+        os.makedirs(checkout)
+        state = os.path.join(self.tmp.name, "q")
+        rc.register_queue("front", state)
+        result = sonar_remedy._doctor(repo=checkout, state=state, project_dir=checkout)
+        checks = [c for c in result["checks"] if c["name"] == "queue_project"]
+        self.assertEqual(len(checks), 1)
+        self.assertEqual(checks[0]["status"], "ok")
+        self.assertEqual(checks[0]["detail"], "front")
+
+
+class SliceRegistryTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self._orig_projects = rc.projects_dir
+        rc.projects_dir = lambda: os.path.join(self.tmp.name, "projects")
+        self.addCleanup(lambda: setattr(rc, "projects_dir", self._orig_projects))
+        self._orig_registry = rc.queue_registry_path
+        rc.queue_registry_path = lambda: os.path.join(self.tmp.name, "queues.json")
+        self.addCleanup(lambda: setattr(rc, "queue_registry_path", self._orig_registry))
+
+    def _run(self, argv):
+        with contextlib.redirect_stdout(io.StringIO()):
+            return sonar_remedy.main(argv)
+
+    def test_slice_registers_queue(self):
+        import debt_queue
+
+        checkout = os.path.join(self.tmp.name, "checkout")
+        os.makedirs(checkout)
+        cfg = _valid_config()
+        cfg["repository"]["local_path"] = checkout
+        rc.save_project("front", cfg)
+        state = os.path.join(self.tmp.name, "q")
+        with mock.patch.object(debt_queue, "slice_queue", return_value={"status": "created"}):
+            code = self._run(
+                [
+                    "--project",
+                    "front",
+                    "slice",
+                    "--repo",
+                    checkout,
+                    "--export",
+                    os.path.join(self.tmp.name, "e.json"),
+                    "--state",
+                    state,
+                    "--execute",
+                ]
+            )
+        self.assertEqual(code, 0)
+        self.assertEqual(rc.project_for_queue(state), "front")
 
 
 class SliceCommandTests(unittest.TestCase):
@@ -911,6 +1067,50 @@ class RecoverCommandTests(unittest.TestCase):
     def test_recover_dry_run(self):
         result = sonar_remedy.recover(self._rcfg(), self.repo, self.state, self.checks, "x" * 64)
         self.assertEqual(result["status"], "dry-run")
+
+    def test_recover_canonicalizes_checks_and_state(self):
+        import debt_queue
+        import sonar_fetch
+
+        saved = os.environ.get("SONAR_TOKEN")
+        self.addCleanup(
+            lambda: (
+                os.environ.pop("SONAR_TOKEN", None)
+                if saved is None
+                else os.environ.__setitem__("SONAR_TOKEN", saved)
+            )
+        )
+        os.environ["SONAR_TOKEN"] = "fixture-token"
+
+        real_canonical = debt_queue.canonical_case
+        calls = []
+
+        def spy_canonical(value):
+            calls.append(str(value))
+            return str(real_canonical(value))
+
+        with (
+            mock.patch.object(debt_queue, "canonical_case", side_effect=spy_canonical),
+            mock.patch.object(
+                sonar_fetch,
+                "fetch",
+                return_value={"status": "collected", "export": self.export, "issues_total": 0},
+            ),
+        ):
+            result = sonar_remedy.recover(
+                self._rcfg(),
+                self.repo,
+                self.state,
+                self.checks,
+                "x" * 64,
+                execute=True,
+                identity_reader=self._identity,
+            )
+        self.assertEqual(result["status"], "done")
+        # checks_path and state_base must be canonicalized (like repo already is),
+        # so Windows CI temp-dir case drift can't surface as `case_alias`.
+        self.assertIn(self.checks, calls)
+        self.assertIn(self.state, calls)
 
     def test_recover_blocks_without_sha(self):
         with self.assertRaises(Exception) as ctx:

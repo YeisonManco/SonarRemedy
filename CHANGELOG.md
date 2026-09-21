@@ -2,6 +2,19 @@
 
 All notable changes to SonarRemedy are documented here.
 
+## Unreleased
+
+### Added
+
+- **Project auto-detection from the current checkout** — `resolve_project_for_checkout` (config module) matches a local checkout to exactly one saved project by canonical `local_path` or normalized git remote URL (credentials stripped, so a PAT embedded in a remote never blocks the match). `doctor` now reports which project binds to the checkout (a `project` check: `ok` / `ambiguous` / `warning`), and `_load_config` auto-selects the matching project when neither `--config` nor `--project` is passed — so a recovery driven from inside a checkout no longer runs against the wrong project. No match falls back to the default config; an ambiguous match fails with a clear "pass --project" error.
+- **Config collision detection** — `list_project_collisions` finds saved projects that share a `local_path` or normalized `repository.url`, and `doctor` surfaces them as a `project_collisions` warning, so two configs can never silently target the same checkout.
+- **Embedded-credential detection** — `doctor` now reports a `remote_credentials` warning when the checkout's `origin` remote URL embeds credentials (a PAT baked into the URL), without ever echoing the token; the fix is to re-set the remote without the token and use a credential manager / env PAT.
+- **Project ↔ queue index** — `register_queue` / `project_for_queue` / `queues_for_project` keep a `~/.sonar-remedy/queues.json` index of which state directory belongs to which project. `slice --execute` registers the queue on creation, and `doctor --state <queue>` reports the bound project (`queue_project`), so the agent can recover the project↔queue mapping it lost.
+
+### Fixed
+
+- **`recover` `case_alias` on Windows CI** — `recover` canonicalized `repo` via `canonical_case` but read `checks_path` and materialized `state_base` with their raw case, so a Windows temp-dir case drift (the GitHub Actions runner's temp path) surfaced as `Blocked: case_alias` in `read_bytes`. `recover` now canonicalizes `checks_path` and `state_base` the same way it already canonicalizes `repo`, matching `autopilot`.
+
 ## [0.9.3] - 2026-09-20
 
 ### Changed
