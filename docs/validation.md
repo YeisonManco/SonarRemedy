@@ -1,5 +1,14 @@
 # Accept evidence, never infer success
 
+> **Internal/advanced interface — bypasses `sonar_remedy.py` safety.** This
+> file documents evidence/validation for `debt_work.py`'s raw interface to
+> the same queue engine that `sonar_remedy.py` wraps with project
+> auto-detection, `doctor`, and queue↔project registration. For day-to-day
+> debt recovery, prefer `README.md` and
+> `host-agents/sonar-remedy-orchestrator.md`. This document remains fully
+> supported for advanced/manual use; see [work-queue.md](work-queue.md) for
+> the full `debt_work.py` command/`proposal` contract.
+
 ## Safe queue validation (current workflow)
 
 The SQLite queue uses [work-queue.md](work-queue.md), not the legacy envelopes below. A worker supplies a `proposed/deferred/failed` object bound to job, attempt, lease, context fingerprint, full write set and source hashes. Version 2 adds explicit test/implementation phases; no worker executes tests or edits the target.

@@ -1,5 +1,13 @@
 # Collect local .NET scan evidence
 
+> **Internal/advanced interface — bypasses `sonar_remedy.py` safety.**
+> `sonar_local.py` is run directly and does not go through `sonar_remedy.py`'s
+> safety layer (project auto-detection, `doctor`, queue↔project
+> registration). For day-to-day debt recovery, prefer `README.md` and
+> `host-agents/sonar-remedy-orchestrator.md`, which drive Sonar analysis
+> (`analyze`) through that safety layer. This document remains fully
+> supported for advanced/manual local-scan use.
+
 `sonar_local.py` exposes a dry-run by default and an explicitly authorized build/test/upload path. The implementation has passed fake-process/API and loopback fixtures only. **Live scanner/server compatibility is unverified; do not treat this as production approval.** No real Sonar evidence was collected during pack verification.
 
 ## Prepare and dry-run

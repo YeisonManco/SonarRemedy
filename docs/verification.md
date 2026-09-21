@@ -1,5 +1,11 @@
 # Fixture verification, awaiting parent review
 
+> **Archived/historical report.** This is a dated, superseded test-run log
+> from the `debtpack.py` 17-test era — not living documentation and not a
+> guide. See [validation.md](validation.md) and [local-scan.md](local-scan.md)
+> for the current evidence/validation guides. Content below is preserved
+> as-is for historical reference.
+
 ## Resumed local-scan increment (2026-09-16)
 
 - Scope: only this pack. No real Sonar calls, sibling builds, commits, push or subagents. Codebase-memory was queried first; its index did not include the new Sonar symbols, so narrow direct reads were used.

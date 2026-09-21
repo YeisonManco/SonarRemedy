@@ -1,5 +1,16 @@
 # Manual proposals, serial integration, honest evidence
 
+> **Internal/advanced interface — bypasses `sonar_remedy.py` safety.** This is
+> the canonical `debt_work.py` command/schema reference — the raw interface to
+> the same queue engine (`debt_queue.py`/`debt_executor.py`) that
+> `sonar_remedy.py` wraps with project auto-detection, `doctor`, and
+> queue↔project registration. For day-to-day debt recovery, prefer
+> `README.md` and `host-agents/sonar-remedy-orchestrator.md`, which drive this
+> same engine through that safety layer. This document remains fully
+> supported for advanced/manual use, and its `proposal` contract below is
+> shared by both interfaces (`sonar_remedy.py` drives the identical
+> `debt_queue.py` validator).
+
 `debt_work.py` retains every supplied issue ordinal in SQLite, groups work by exact path and kind, leases immutable bounded contexts, and records proposals. Default commands do not edit the target. Explicitly configured `integrate --execute` or `run --integrate --execute` can apply existing-file replacements and run serial local checks. No command launches a native model provider, commits, scans or confirms a Sonar finding. Manual JSON proposals work without any model runtime.
 
 ## Quick path
@@ -71,7 +82,7 @@ Only selected attempts receive source. Files up to 16 KiB use a full exact text 
 
 Use [the proposal schema](debt-proposal.schema.json) and [the deliberately non-executable example](../examples/debt-proposal.example.json). The standard-library validator enforces the contract without a JSON Schema dependency.
 
-Copy `job_id`, `attempt_id`, `lease`, and `context_fingerprint` exactly from the claim. `version` is integer 1 or 2. Version 2 requires each edit's `phase` to be `test` or `implementation`; version 1 has no phase and is eligible only for explicitly owner-configured characterization integration. Include `status`, `edits`, `reason`, `risks`, and `test_plan`; unknown fields (including `all_fixed`) are rejected. `test_plan` describes intended proof, not observed test execution. Each path appears once across both phases.
+Copy `job_id`, `attempt_id`, `lease`, and `context_fingerprint` exactly from the claim. `version` is integer 1 or 2. Version 2 requires each edit's `phase` to be `test` or `implementation`; version 1 has no phase and is eligible only for explicitly owner-configured characterization integration. Include `status`, `edits`, `reason`, `risks`, `test_plan`, and `follow_up`; unknown fields (including `all_fixed`) are rejected, and `follow_up` is REQUIRED — use `[]` when there is nothing for a human to do. `follow_up` is a list (max 4) of `{"action": "<token>", "name": "<short>", "note": "<short>"}` for human actions the fix requires. `test_plan` describes intended proof, not observed test execution. Each path appears once across both phases.
 
 For `proposed`, each edit supplies an approved `path`, matching `before_sha256`, and non-overlapping `{old,new}` replacements. Old text must be nonempty, uniquely matched in the full current file **and contained in a retained window**. Every approved source hash must still match. Proposed edits are merely validated data; no file is changed. `deferred`/`failed` require a reason and no edits. `success`, `partial`, completion booleans, and verified/confirmed statuses are not accepted.
 
