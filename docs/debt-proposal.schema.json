@@ -4,7 +4,7 @@
   "description": "Also subject to a 256 KiB UTF-8 bound, exact lease/context identity, source hashes, write-set and unique retained-text checks.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["version", "job_id", "attempt_id", "lease", "context_fingerprint", "status", "edits", "reason", "risks", "test_plan"],
+  "required": ["version", "job_id", "attempt_id", "lease", "context_fingerprint", "status", "edits", "reason", "risks", "test_plan", "follow_up"],
   "properties": {
     "version": {"enum": [1, 2], "type": "integer"},
     "job_id": {"type": "string", "pattern": "^j[0-9a-f]{24}$"},
@@ -34,7 +34,19 @@
     },
     "reason": {"type": "string", "pattern": "^([A-Za-z0-9_.-]{1,128})?$"},
     "risks": {"type": "array", "maxItems": 8, "items": {"type": "string", "maxLength": 1000}},
-    "test_plan": {"type": "string", "minLength": 1, "maxLength": 4000}
+    "test_plan": {"type": "string", "minLength": 1, "maxLength": 4000},
+    "follow_up": {
+      "type": "array", "maxItems": 4,
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["action", "name", "note"],
+        "properties": {
+          "action": {"type": "string", "pattern": "^[A-Za-z0-9_.-]{1,128}$"},
+          "name": {"type": "string", "minLength": 1, "maxLength": 128},
+          "note": {"type": "string", "minLength": 1, "maxLength": 500}
+        }
+      }
+    }
   },
   "allOf": [{
     "if": {"properties": {"version": {"const": 2}}},
