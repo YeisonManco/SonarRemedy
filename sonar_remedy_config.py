@@ -288,6 +288,53 @@ def resolve_project_for_checkout(
     return {"status": "none", "matches": []}
 
 
+def resolve_project_for_repository(
+    local_path: str | None, url: str | None, projects: list[str] | None = None
+) -> dict[str, Any]:
+    """Resolve which saved project matches an already-known repository identity.
+
+    Same advisory matching as ``resolve_project_for_checkout`` (canonical
+    ``local_path`` equality, or normalized remote URL), but keyed off a
+    ``repository`` block that is already known -- e.g. a ``--config`` file's
+    own ``repository.local_path``/``repository.url`` -- instead of a live
+    checkout on disk. Used so config-based invocations (CI's ``--config``
+    flow) still register their queue when the config unambiguously matches a
+    saved project. Returns ``{"status": "ok", "project", "matches"}``,
+    ``{"status": "ambiguous", "matches"}``, or ``{"status": "none", "matches": []}``.
+    """
+    names = list_projects() if projects is None else list(projects)
+    canonical_local = canonical_path(local_path) if local_path else None
+    normalized_url = normalize_repo_url(url) if url else ""
+    matches: list[dict[str, str]] = []
+    for name in names:
+        try:
+            cfg = load_project(name)
+        except ConfigError:
+            continue
+        repository = cfg.get("repository") or {}
+        reason = ""
+        candidate_local = repository.get("local_path")
+        if (
+            canonical_local
+            and candidate_local
+            and canonical_path(candidate_local) == canonical_local
+        ):
+            reason = "local_path"
+        if (
+            not reason
+            and normalized_url
+            and normalized_url == normalize_repo_url(repository.get("url", ""))
+        ):
+            reason = "remote_url"
+        if reason:
+            matches.append({"name": name, "reason": reason})
+    if len(matches) == 1:
+        return {"status": "ok", "project": matches[0]["name"], "matches": matches}
+    if len(matches) > 1:
+        return {"status": "ambiguous", "matches": matches}
+    return {"status": "none", "matches": []}
+
+
 def list_project_collisions(projects: list[str] | None = None) -> list[dict[str, str]]:
     """Return pairs of saved projects that share a target (local_path or remote URL)."""
     names = list_projects() if projects is None else list(projects)

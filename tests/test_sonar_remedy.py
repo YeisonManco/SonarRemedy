@@ -128,6 +128,24 @@ class LoadConfigAutoDetectTests(unittest.TestCase):
             loaded = sonar_remedy._load_config(args)
         self.assertEqual(loaded["sonar"]["project_key"], "my-project")
 
+    def test_auto_detects_project_from_explicit_repo_when_cwd_differs(self):
+        # Documented real usage (host-agents/sonar-remedy-orchestrator.md): the
+        # CLI runs from the pack directory while `--repo` names the actual
+        # checkout, so os.getcwd() is never the checkout. Auto-detection must
+        # resolve against the explicit --repo, not the process cwd.
+        checkout = os.path.join(self.tmp.name, "checkout")
+        os.makedirs(checkout)
+        pack_dir = os.path.join(self.tmp.name, "pack")
+        os.makedirs(pack_dir)
+        cfg = _valid_config()
+        cfg["repository"]["local_path"] = checkout
+        rc.save_project("front", cfg)
+        args = argparse.Namespace(config=None, project=None, repo=checkout)
+        with mock.patch.object(sonar_remedy.os, "getcwd", return_value=pack_dir):
+            loaded = sonar_remedy._load_config(args)
+        self.assertEqual(loaded["sonar"]["project_key"], "my-project")
+        self.assertEqual(loaded["repository"]["local_path"], checkout)
+
 
 class DoctorProjectBindingTests(unittest.TestCase):
     def setUp(self):
@@ -238,6 +256,54 @@ class SliceRegistryTests(unittest.TestCase):
                 [
                     "--project",
                     "front",
+                    "slice",
+                    "--repo",
+                    checkout,
+                    "--export",
+                    os.path.join(self.tmp.name, "e.json"),
+                    "--state",
+                    state,
+                    "--execute",
+                ]
+            )
+        self.assertEqual(code, 0)
+        self.assertEqual(rc.project_for_queue(state), "front")
+
+
+class ConfigRegistersQueueTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self._orig_projects = rc.projects_dir
+        rc.projects_dir = lambda: os.path.join(self.tmp.name, "projects")
+        self.addCleanup(lambda: setattr(rc, "projects_dir", self._orig_projects))
+        self._orig_registry = rc.queue_registry_path
+        rc.queue_registry_path = lambda: os.path.join(self.tmp.name, "queues.json")
+        self.addCleanup(lambda: setattr(rc, "queue_registry_path", self._orig_registry))
+
+    def _run(self, argv):
+        with contextlib.redirect_stdout(io.StringIO()):
+            return sonar_remedy.main(argv)
+
+    def test_slice_execute_with_config_registers_queue(self):
+        # _resolve_project_name returned None whenever --config was set, even
+        # when the config's own repository unambiguously matches a saved
+        # project -- a common CI pattern (`slice --execute --config <path>`).
+        import debt_queue
+
+        checkout = os.path.join(self.tmp.name, "checkout")
+        os.makedirs(checkout)
+        cfg = _valid_config()
+        cfg["repository"]["local_path"] = checkout
+        rc.save_project("front", cfg)
+        config_path = os.path.join(self.tmp.name, "config.json")
+        rc.save(cfg, config_path)
+        state = os.path.join(self.tmp.name, "q")
+        with mock.patch.object(debt_queue, "slice_queue", return_value={"status": "created"}):
+            code = self._run(
+                [
+                    "--config",
+                    config_path,
                     "slice",
                     "--repo",
                     checkout,
@@ -996,6 +1062,9 @@ class RecoverCommandTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
+        self._orig_registry = rc.queue_registry_path
+        rc.queue_registry_path = lambda: os.path.join(self.tmp.name, "queues.json")
+        self.addCleanup(lambda: setattr(rc, "queue_registry_path", self._orig_registry))
         self.repo = os.path.join(self.tmp.name, "target")
         os.makedirs(self.repo)
         with open(os.path.join(self.repo, "a.cs"), "w", encoding="utf-8") as fh:
@@ -1146,6 +1215,96 @@ class RecoverCommandTests(unittest.TestCase):
             )
         self.assertEqual(result["status"], "done")
         self.assertTrue(os.path.isdir(base))
+
+    def test_recover_resumed_after_awaiting_proposals_does_not_crash(self):
+        # recover()'s own documented resume flow: re-run the SAME command after
+        # it returns awaiting_proposals. The loop restarts at cycle-0, whose
+        # queue directory was already created by the first call, so it must
+        # NOT try to slice_queue() again (Blocked: queue_already_exists).
+        import debt_runner
+        import sonar_fetch
+
+        saved = os.environ.get("SONAR_TOKEN")
+        self.addCleanup(
+            lambda: (
+                os.environ.pop("SONAR_TOKEN", None)
+                if saved is None
+                else os.environ.__setitem__("SONAR_TOKEN", saved)
+            )
+        )
+        os.environ["SONAR_TOKEN"] = "fixture-token"
+
+        with (
+            mock.patch.object(
+                sonar_fetch,
+                "fetch",
+                return_value={"status": "collected", "export": self.export, "issues_total": 1},
+            ),
+            mock.patch.object(
+                debt_runner, "run", return_value={"status": "awaiting_proposals", "waiting": []}
+            ),
+        ):
+            first = sonar_remedy.recover(
+                self._rcfg(),
+                self.repo,
+                self.state,
+                self.checks,
+                "x" * 64,
+                execute=True,
+                identity_reader=self._identity,
+            )
+            self.assertEqual(first["status"], "awaiting_proposals")
+            second = sonar_remedy.recover(
+                self._rcfg(),
+                self.repo,
+                self.state,
+                self.checks,
+                "x" * 64,
+                execute=True,
+                identity_reader=self._identity,
+            )
+        self.assertEqual(second["status"], "awaiting_proposals")
+
+    def test_recover_registers_new_cycle_queue(self):
+        # Only `slice`'s CLI branch registered its queue; recover()'s own
+        # per-cycle queues never did, so `doctor`'s queue_project check always
+        # reported "not in the queue index" for recover-created queues.
+        import debt_runner
+        import sonar_fetch
+
+        saved = os.environ.get("SONAR_TOKEN")
+        self.addCleanup(
+            lambda: (
+                os.environ.pop("SONAR_TOKEN", None)
+                if saved is None
+                else os.environ.__setitem__("SONAR_TOKEN", saved)
+            )
+        )
+        os.environ["SONAR_TOKEN"] = "fixture-token"
+
+        with (
+            mock.patch.object(
+                sonar_fetch,
+                "fetch",
+                return_value={"status": "collected", "export": self.export, "issues_total": 1},
+            ),
+            mock.patch.object(
+                debt_runner, "run", return_value={"status": "awaiting_proposals", "waiting": []}
+            ),
+        ):
+            result = sonar_remedy.recover(
+                self._rcfg(),
+                self.repo,
+                self.state,
+                self.checks,
+                "x" * 64,
+                execute=True,
+                identity_reader=self._identity,
+                project_name="front",
+            )
+        self.assertEqual(result["status"], "awaiting_proposals")
+        cycle0 = os.path.join(self.state, "cycle-0")
+        self.assertEqual(rc.project_for_queue(cycle0), "front")
 
     def test_recover_done_when_no_issues(self):
         import sonar_fetch

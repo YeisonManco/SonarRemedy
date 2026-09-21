@@ -51,11 +51,14 @@ def _load_config(args: argparse.Namespace) -> dict[str, Any]:
         return rc.load(args.config)
     if args.project:
         return rc.load_project(args.project)
-    # No explicit project/config: try to bind the current checkout to exactly one
-    # saved project before falling back to the default config. This prevents the
-    # agent from silently running against the wrong project when it stands inside
-    # a checkout that matches a saved project.
-    resolved = rc.resolve_project_for_checkout(os.getcwd())
+    # No explicit project/config: try to bind the actual target checkout to
+    # exactly one saved project before falling back to the default config.
+    # Every subcommand that reaches here accepts an explicit --repo naming
+    # the real target checkout (documented usage runs the CLI from the pack
+    # directory while passing --repo <target>, so os.getcwd() is almost never
+    # the checkout); fall back to os.getcwd() only when no --repo was given.
+    target = getattr(args, "repo", None) or os.getcwd()
+    resolved = rc.resolve_project_for_checkout(target)
     if resolved["status"] == "ok":
         return rc.load_project(resolved["project"])
     if resolved["status"] == "ambiguous":
@@ -67,13 +70,30 @@ def _load_config(args: argparse.Namespace) -> dict[str, Any]:
     return rc.load(rc.default_config_path())
 
 
-def _resolve_project_name(args: argparse.Namespace) -> str | None:
-    """Return the project name this run targets (for the queue index), or None."""
+def _resolve_project_name(
+    args: argparse.Namespace, rcfg: dict[str, Any] | None = None
+) -> str | None:
+    """Return the project name this run targets (for the queue index), or None.
+
+    ``rcfg`` is the already-loaded config for this run (from ``_load_config``);
+    when ``args.config`` was used, its own ``repository`` block is matched
+    against saved projects so CI's ``--config`` flow still registers its queue.
+    """
     if getattr(args, "project", None):
         return args.project
     if getattr(args, "config", None):
-        return None
-    resolved = rc.resolve_project_for_checkout(os.getcwd())
+        if rcfg is None:
+            try:
+                rcfg = rc.load(args.config)
+            except rc.ConfigError:
+                return None
+        repository = rcfg.get("repository") or {}
+        resolved = rc.resolve_project_for_repository(
+            repository.get("local_path"), repository.get("url")
+        )
+        return resolved["project"] if resolved["status"] == "ok" else None
+    target = getattr(args, "repo", None) or os.getcwd()
+    resolved = rc.resolve_project_for_checkout(target)
     return resolved["project"] if resolved["status"] == "ok" else None
 
 
@@ -932,6 +952,7 @@ def recover(
     process_runner: Callable[..., dict[str, Any]] | None = None,
     control_root: str | Path | None = None,
     max_cycles: int = 10,
+    project_name: str | None = None,
 ) -> dict[str, Any]:
     """Loop the recovery cycle until done or impossible.
 
@@ -939,6 +960,12 @@ def recover(
     status. On `re_scan_required` it re-analyzes (publish to Sonar) and starts the
     next cycle. Stops on 0 issues, no progress (everything terminal), or the model
     asking for proposals (`awaiting_proposals`). The model never chooses a step.
+
+    Re-running this exact call after it returns `awaiting_proposals` (its own
+    documented resume flow) restarts the loop at `cycle=0`; that cycle's queue
+    directory already exists from the earlier call, so it must not slice again.
+    `project_name`, when given, registers each newly created cycle queue in the
+    project↔queue index (mirroring the `slice` CLI branch).
     """
     import debt_executor
     import debt_queue
@@ -985,9 +1012,12 @@ def recover(
             break
         export = fetched["export"]
         state = os.path.join(state_abs, f"cycle-{cycle}")
-        debt_queue.slice_queue(
-            repo_abs, export, state, branch, execute=True, identity_reader=identity_reader
-        )
+        if not os.path.isfile(os.path.join(state, "queue.sqlite3")):
+            debt_queue.slice_queue(
+                repo_abs, export, state, branch, execute=True, identity_reader=identity_reader
+            )
+            if project_name:
+                rc.register_queue(project_name, state)
         work = debt_queue.Queue(state, target=repo_abs, identity_reader=identity_reader)
         ran = debt_runner.run(
             work,
@@ -1686,7 +1716,7 @@ def main(argv: list[str] | None = None) -> int:
                 execute=args.execute,
             )
             if result.get("status") == "created":
-                name = _resolve_project_name(args)
+                name = _resolve_project_name(args, rcfg)
                 if name:
                     rc.register_queue(name, args.state)
             print(json.dumps(result, sort_keys=True))
@@ -1845,6 +1875,7 @@ def main(argv: list[str] | None = None) -> int:
                 limit=args.limit,
                 execute=args.execute,
                 max_cycles=args.max_cycles,
+                project_name=_resolve_project_name(args, rcfg),
             )
             print(json.dumps(result, sort_keys=True))
             return 0
